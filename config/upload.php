@@ -1,149 +1,120 @@
 <?php
 
 return [
-
     /*
     |--------------------------------------------------------------------------
-    | Upload Configuration
+    | File Upload Configuration
     |--------------------------------------------------------------------------
     |
-    | This file is for configuring file upload limits and processing settings
-    | for the Cat Story Generator application. These settings allow for
-    | unlimited document processing of any size.
+    | This file contains configuration options for handling large file uploads
+    | in the Cat Story Generator application.
     |
     */
 
-    /*
-    |--------------------------------------------------------------------------
-    | Maximum File Upload Size
-    |--------------------------------------------------------------------------
-    |
-    | This value determines the maximum file size that can be uploaded.
-    | Set to 2048M (2GB) to allow very large documents.
-    |
-    */
-    'max_file_size' => env('UPLOAD_MAX_FILESIZE', '2048M'),
+    // Maximum file size for uploads (set to 2GB for unlimited support)
+    'max_file_size' => env('UPLOAD_MAX_FILE_SIZE', '2048M'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Maximum POST Size
-    |--------------------------------------------------------------------------
-    |
-    | This value determines the maximum size of POST data that will be accepted.
-    | This should be larger than max_file_size to account for other form data.
-    |
-    */
-    'max_post_size' => env('POST_MAX_SIZE', '2048M'),
+    // Maximum POST data size (should be same or larger than max_file_size)
+    'max_post_size' => env('UPLOAD_MAX_POST_SIZE', '2048M'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Maximum Execution Time
-    |--------------------------------------------------------------------------
-    |
-    | This value determines how long (in seconds) a script is allowed to run
-    | before it is terminated. Set to 1 hour (3600 seconds) for large files.
-    |
-    */
-    'max_execution_time' => env('MAX_EXECUTION_TIME', 3600),
+    // Maximum execution time for upload processing (in seconds)
+    'max_execution_time' => env('UPLOAD_MAX_EXECUTION_TIME', 3600), // 1 hour
 
-    /*
-    |--------------------------------------------------------------------------
-    | Maximum Input Time
-    |--------------------------------------------------------------------------
-    |
-    | This value determines how long (in seconds) a script is allowed to parse
-    | input data. Set to 1 hour (3600 seconds) for large uploads.
-    |
-    */
-    'max_input_time' => env('MAX_INPUT_TIME', 3600),
+    // Maximum input time for receiving upload data (in seconds)
+    'max_input_time' => env('UPLOAD_MAX_INPUT_TIME', 3600), // 1 hour
 
-    /*
-    |--------------------------------------------------------------------------
-    | Memory Limit
-    |--------------------------------------------------------------------------
-    |
-    | This value determines the maximum amount of memory a script may consume.
-    | Set to 2048M (2GB) for processing large documents.
-    |
-    */
-    'memory_limit' => env('MEMORY_LIMIT', '2048M'),
+    // Memory limit for processing uploads
+    'memory_limit' => env('UPLOAD_MEMORY_LIMIT', '2048M'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Allowed File Types
-    |--------------------------------------------------------------------------
-    |
-    | This array contains the file extensions that are allowed for upload.
-    | Only document types that can be processed into cat stories.
-    |
-    */
-    'allowed_extensions' => [
-        'pdf',
-        'doc',
-        'docx',
-        'ppt',
-        'pptx',
+    // Supported file types and their MIME types
+    'supported_types' => [
+        'pdf' => [
+            'extensions' => ['pdf'],
+            'mime_types' => ['application/pdf'],
+            'description' => 'Portable Document Format'
+        ],
+        'word' => [
+            'extensions' => ['doc', 'docx'],
+            'mime_types' => [
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            ],
+            'description' => 'Microsoft Word Documents'
+        ],
+        'powerpoint' => [
+            'extensions' => ['ppt', 'pptx'],
+            'mime_types' => [
+                'application/vnd.ms-powerpoint',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            ],
+            'description' => 'Microsoft PowerPoint Presentations'
+        ]
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Allowed MIME Types
-    |--------------------------------------------------------------------------
-    |
-    | This array contains the MIME types that correspond to the allowed
-    | file extensions for additional validation.
-    |
-    */
-    'allowed_mime_types' => [
-        'application/pdf',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.ms-powerpoint',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    // Storage configuration
+    'storage' => [
+        'disk' => env('UPLOAD_STORAGE_DISK', 'public'),
+        'path' => 'documents/original',
+        'temporary_path' => 'documents/temp',
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Processing Settings
-    |--------------------------------------------------------------------------
-    |
-    | These settings control how documents are processed and converted
-    | into cat stories.
-    |
-    */
+    // Processing configuration
+    'processing' => [
+        // Queue name for document processing jobs
+        'queue_name' => 'document-processing',
+        
+        // Queue name for AI story generation jobs
+        'ai_queue_name' => 'cat-story-generation',
+        
+        // Maximum retries for failed processing
+        'max_retries' => 3,
+        
+        // Timeout for processing jobs (in seconds)
+        'job_timeout' => 3600, // 1 hour
+        
+        // Chunk size for processing very large documents (in characters)
+        'chunk_size' => 50000, // 50KB chunks
+        
+        // Maximum content length before chunking is used
+        'chunk_threshold' => 100000, // 100KB
+    ],
 
-    // Maximum content length before chunking (in characters)
-    'max_content_length' => env('MAX_CONTENT_LENGTH', 100000),
+    // AI Configuration
+    'ai' => [
+        // Maximum tokens for AI processing
+        'max_tokens' => 2000,
+        
+        // AI model to use
+        'model' => env('OPENAI_MODEL', 'gpt-3.5-turbo'),
+        
+        // Temperature for AI generation
+        'temperature' => 0.8,
+        
+        // Maximum content length for single AI request
+        'max_content_length' => 20000, // 20KB
+    ],
 
-    // Chunk size for processing large content (in characters)
-    'chunk_size' => env('CHUNK_SIZE', 15000),
+    // Validation rules
+    'validation' => [
+        // Minimum content length after extraction
+        'min_content_length' => 10,
+        
+        // Maximum filename length
+        'max_filename_length' => 255,
+        
+        // Allowed characters in filenames (regex pattern)
+        'filename_pattern' => '/^[a-zA-Z0-9\-_\. ]+$/',
+    ],
 
-    // Maximum number of chunks to process
-    'max_chunks' => env('MAX_CHUNKS', 5),
-
-    // Progress logging interval (process every X pages/slides/sections)
-    'progress_log_interval' => env('PROGRESS_LOG_INTERVAL', 100),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Queue Settings
-    |--------------------------------------------------------------------------
-    |
-    | These settings control how document processing jobs are queued
-    | and executed for optimal performance.
-    |
-    */
-
-    // Job timeout for document processing (in seconds)
-    'processing_timeout' => env('PROCESSING_TIMEOUT', 3600),
-
-    // Job timeout for cat story generation (in seconds)
-    'story_generation_timeout' => env('STORY_GENERATION_TIMEOUT', 1800),
-
-    // Number of retry attempts for failed jobs
-    'max_job_attempts' => env('MAX_JOB_ATTEMPTS', 3),
-
-    // Backoff delays between retry attempts (in seconds)
-    'job_backoff_delays' => [60, 300, 900], // 1 min, 5 min, 15 min
-
+    // Cleanup configuration
+    'cleanup' => [
+        // Delete failed uploads after X days
+        'delete_failed_after_days' => 7,
+        
+        // Delete temporary files after X hours
+        'delete_temp_after_hours' => 24,
+        
+        // Maximum storage per user (in bytes, 0 = unlimited)
+        'max_user_storage' => 0,
+    ]
 ];

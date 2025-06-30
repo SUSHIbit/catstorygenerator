@@ -23,7 +23,7 @@ class Kernel extends HttpKernel
         \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
         
         // Add large file upload middleware globally
-        \App\Http\Middleware\LargeFileUpload::class,
+        // \App\Http\Middleware\LargeFileUpload::class,
     ];
 
     /**

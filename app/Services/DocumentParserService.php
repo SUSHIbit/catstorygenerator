@@ -22,7 +22,6 @@ class DocumentParserService
         $config = new Config();
         $config->setRetainImageContent(false); // Don't load images
         $config->setIgnoreEncryption(true);
-        $config->setHorizontalOffset('');
         
         $this->pdfParser = new PdfParser([], $config);
     }
@@ -34,8 +33,6 @@ class DocumentParserService
     {
         try {
             Log::info("Starting unlimited document parsing for document ID: {$document->id}");
-            
-            // REMOVED: File size limits - accept any size
             
             // Set high memory limit for large documents
             $originalMemoryLimit = ini_get('memory_limit');
@@ -116,7 +113,6 @@ class DocumentParserService
             $pages = $pdf->getPages();
             $pageCount = count($pages);
             
-            // NO PAGE LIMIT - Process ALL pages
             Log::info("Processing PDF with {$pageCount} pages (unlimited processing)");
             
             foreach ($pages as $pageNumber => $page) {
@@ -132,8 +128,6 @@ class DocumentParserService
                         Log::info("Processed " . ($pageNumber + 1) . " pages out of {$pageCount}");
                         gc_collect_cycles(); // Force garbage collection
                     }
-                    
-                    // NO CONTENT LIMIT - Process everything
                     
                 } catch (Exception $pageError) {
                     Log::warning("Failed to extract text from page " . ($pageNumber + 1) . ": " . $pageError->getMessage());
@@ -168,16 +162,12 @@ class DocumentParserService
             foreach ($phpWord->getSections() as $sectionIndex => $section) {
                 $sectionCount++;
                 
-                // NO SECTION LIMIT - Process ALL sections
-                
                 foreach ($section->getElements() as $element) {
                     $elementText = $this->extractTextFromWordElement($element);
                     $text .= $elementText . "\n";
                     
                     // Free memory
                     unset($elementText);
-                    
-                    // NO CONTENT LIMIT - Process everything
                 }
                 
                 // Log progress every 100 sections
@@ -200,36 +190,28 @@ class DocumentParserService
     }
 
     /**
-     * UNLIMITED PowerPoint extraction - ROBUST ERROR HANDLING
+     * UNLIMITED PowerPoint extraction - FIXED VERSION
      */
     private function extractFromPowerPointUnlimited(string $filePath): string
     {
         try {
             Log::info("Processing unlimited PowerPoint extraction for: " . basename($filePath));
             
-            // Try different PowerPoint readers with error handling
+            // Set error reporting to ignore warnings from PhpPresentation
+            $originalErrorReporting = error_reporting();
+            error_reporting(E_ERROR | E_PARSE);
+            
             $presentation = null;
             $text = '';
             
             try {
-                // First attempt: Standard PowerPoint reader
-                $presentation = PresentationIOFactory::load($filePath);
+                // Try to load the presentation with error suppression
+                $presentation = @PresentationIOFactory::load($filePath);
             } catch (Exception $e) {
-                Log::warning("Standard PowerPoint reader failed: " . $e->getMessage());
+                Log::warning("Failed to load PowerPoint file: " . $e->getMessage());
                 
-                // Alternative approach: Try different reader types
-                try {
-                    $presentation = PresentationIOFactory::createReader('PowerPoint2007')->load($filePath);
-                } catch (Exception $e2) {
-                    Log::warning("PowerPoint2007 reader failed: " . $e2->getMessage());
-                    
-                    try {
-                        $presentation = PresentationIOFactory::createReader('ODPresentation')->load($filePath);
-                    } catch (Exception $e3) {
-                        Log::warning("ODPresentation reader failed: " . $e3->getMessage());
-                        throw new Exception("Could not read PowerPoint file with any available reader");
-                    }
-                }
+                // Try alternative: Extract as text manually using basic file reading
+                return $this->extractPowerPointAsText($filePath);
             }
             
             if (!$presentation) {
@@ -238,50 +220,71 @@ class DocumentParserService
             
             $slideCount = 0;
             
-            foreach ($presentation->getAllSlides() as $slideIndex => $slide) {
-                $slideCount++;
-                
-                // NO SLIDE LIMIT - Process ALL slides
-                
-                $text .= "Slide " . ($slideIndex + 1) . ":\n";
-                
-                try {
-                    foreach ($slide->getShapeCollection() as $shape) {
-                        try {
-                            if (method_exists($shape, 'getPlainText')) {
-                                $slideText = $shape->getPlainText();
-                                if (!empty($slideText)) {
-                                    $text .= $slideText . "\n";
+            try {
+                foreach ($presentation->getAllSlides() as $slideIndex => $slide) {
+                    $slideCount++;
+                    
+                    $text .= "Slide " . ($slideIndex + 1) . ":\n";
+                    
+                    try {
+                        $shapeCollection = $slide->getShapeCollection();
+                        
+                        foreach ($shapeCollection as $shape) {
+                            try {
+                                // Check if shape has text methods
+                                if (method_exists($shape, 'getPlainText')) {
+                                    $slideText = @$shape->getPlainText();
+                                    if (!empty($slideText)) {
+                                        $text .= $slideText . "\n";
+                                    }
+                                } elseif (method_exists($shape, 'getText')) {
+                                    $slideText = @$shape->getText();
+                                    if (!empty($slideText)) {
+                                        $text .= $slideText . "\n";
+                                    }
+                                } elseif (method_exists($shape, 'getRichTextElements')) {
+                                    $richTextElements = @$shape->getRichTextElements();
+                                    if (is_array($richTextElements)) {
+                                        foreach ($richTextElements as $element) {
+                                            if (method_exists($element, 'getText')) {
+                                                $elementText = @$element->getText();
+                                                if (!empty($elementText)) {
+                                                    $text .= $elementText . "\n";
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
-                                unset($slideText);
-                            } elseif (method_exists($shape, 'getText')) {
-                                $slideText = $shape->getText();
-                                if (!empty($slideText)) {
-                                    $text .= $slideText . "\n";
-                                }
-                                unset($slideText);
+                            } catch (Exception $shapeError) {
+                                Log::warning("Failed to extract text from shape in slide " . ($slideIndex + 1) . ": " . $shapeError->getMessage());
+                                continue; // Skip problematic shapes
                             }
-                        } catch (Exception $shapeError) {
-                            Log::warning("Failed to extract text from shape in slide " . ($slideIndex + 1) . ": " . $shapeError->getMessage());
-                            continue; // Skip problematic shapes
                         }
+                    } catch (Exception $slideError) {
+                        Log::warning("Failed to process slide " . ($slideIndex + 1) . ": " . $slideError->getMessage());
+                        $text .= "[Slide content could not be extracted]\n";
+                        continue; // Skip problematic slides but continue
                     }
-                } catch (Exception $slideError) {
-                    Log::warning("Failed to process slide " . ($slideIndex + 1) . ": " . $slideError->getMessage());
-                    $text .= "[Slide content could not be extracted]\n";
-                    continue; // Skip problematic slides but continue
+                    
+                    $text .= "\n";
+                    
+                    // Log progress every 100 slides
+                    if ($slideCount % 100 === 0) {
+                        Log::info("Processed {$slideCount} slides");
+                        gc_collect_cycles();
+                    }
                 }
+            } catch (Exception $presentationError) {
+                Log::warning("Error processing presentation slides: " . $presentationError->getMessage());
                 
-                $text .= "\n";
-                
-                // Log progress every 100 slides
-                if ($slideCount % 100 === 0) {
-                    Log::info("Processed {$slideCount} slides");
-                    gc_collect_cycles();
+                // Fallback to basic text extraction
+                if (empty($text)) {
+                    return $this->extractPowerPointAsText($filePath);
                 }
-                
-                // NO CONTENT LIMIT - Process everything
             }
+            
+            // Restore error reporting
+            error_reporting($originalErrorReporting);
             
             if (empty($text)) {
                 throw new Exception("PowerPoint presentation appears to be empty");
@@ -291,7 +294,61 @@ class DocumentParserService
             return $text;
             
         } catch (Exception $e) {
+            // Restore error reporting on error
+            if (isset($originalErrorReporting)) {
+                error_reporting($originalErrorReporting);
+            }
+            
             throw new Exception("PowerPoint parsing error: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Fallback method to extract PowerPoint as basic text
+     */
+    private function extractPowerPointAsText(string $filePath): string
+    {
+        try {
+            Log::info("Attempting fallback text extraction for PowerPoint file");
+            
+            // Try to read the file as a ZIP archive (PPTX files are ZIP archives)
+            if (class_exists('ZipArchive')) {
+                $zip = new \ZipArchive();
+                if ($zip->open($filePath) === TRUE) {
+                    $text = '';
+                    
+                    // Look for slide content in the ZIP
+                    for ($i = 0; $i < $zip->numFiles; $i++) {
+                        $filename = $zip->getNameIndex($i);
+                        
+                        // Look for slide XML files
+                        if (strpos($filename, 'ppt/slides/slide') !== false && strpos($filename, '.xml') !== false) {
+                            $slideContent = $zip->getFromIndex($i);
+                            
+                            // Extract text from XML using simple regex
+                            if (preg_match_all('/<a:t[^>]*>(.*?)<\/a:t>/s', $slideContent, $matches)) {
+                                foreach ($matches[1] as $match) {
+                                    $text .= strip_tags($match) . "\n";
+                                }
+                            }
+                        }
+                    }
+                    
+                    $zip->close();
+                    
+                    if (!empty($text)) {
+                        Log::info("Successfully extracted text using fallback method");
+                        return $text;
+                    }
+                }
+            }
+            
+            // If all else fails, return a basic message
+            return "PowerPoint presentation content could not be extracted due to format limitations. Please try converting to PDF or Word format for better text extraction.";
+            
+        } catch (Exception $e) {
+            Log::warning("Fallback PowerPoint extraction failed: " . $e->getMessage());
+            return "PowerPoint presentation uploaded but text extraction failed. Content may contain primarily images or complex formatting.";
         }
     }
 
@@ -323,7 +380,6 @@ class DocumentParserService
      */
     private function cleanExtractedTextUnlimited(string $text): string
     {
-        // NO TRUNCATION LIMIT - Process all content
         Log::info("Processing " . strlen($text) . " characters of extracted text");
         
         // Remove excessive whitespace

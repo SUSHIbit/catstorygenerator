@@ -19,3 +19,33 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 </IfModule>
+
+# PHP Configuration for Large File Uploads
+<IfModule mod_php7.c>
+    php_value upload_max_filesize 2048M
+    php_value post_max_size 2048M
+    php_value memory_limit 2048M
+    php_value max_execution_time 3600
+    php_value max_input_time 3600
+    php_value max_file_uploads 20
+    php_value file_uploads On
+</IfModule>
+
+<IfModule mod_php8.c>
+    php_value upload_max_filesize 2048M
+    php_value post_max_size 2048M
+    php_value memory_limit 2048M
+    php_value max_execution_time 3600
+    php_value max_input_time 3600
+    php_value max_file_uploads 20
+    php_value file_uploads On
+</IfModule>
+
+# Alternative using php_admin_value (if above doesn't work)
+<IfModule mod_php.c>
+    php_admin_value upload_max_filesize 2048M
+    php_admin_value post_max_size 2048M
+    php_admin_value memory_limit 2048M
+    php_admin_value max_execution_time 3600
+    php_admin_value max_input_time 3600
+</IfModule>

@@ -3,21 +3,25 @@
 namespace App\Services;
 
 use App\Models\Document;
-use OpenAI\Client;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 use Exception;
 
 class OpenAIService
 {
-    private Client $client;
+    private string $apiKey;
     private int $maxTokens;
     private string $model;
 
-    public function __construct(Client $client)
+    public function __construct()
     {
-        $this->client = $client;
+        $this->apiKey = config('services.openai.api_key') ?? env('OPENAI_API_KEY');
         $this->maxTokens = 2000;
         $this->model = 'gpt-3.5-turbo';
+        
+        if (empty($this->apiKey)) {
+            throw new Exception('OpenAI API key not configured');
+        }
     }
 
     /**
@@ -64,7 +68,12 @@ class OpenAIService
         
         while ($retryCount < $maxRetries) {
             try {
-                $response = $this->client->chat()->create([
+                $response = Http::withHeaders([
+                    'Authorization' => 'Bearer ' . $this->apiKey,
+                    'Content-Type' => 'application/json',
+                ])
+                ->timeout(60)
+                ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => $this->model,
                     'messages' => [
                         [
@@ -83,13 +92,18 @@ class OpenAIService
                     'presence_penalty' => 0.1
                 ]);
 
-                $catStory = $response->choices[0]->message->content ?? '';
-                
-                if (empty($catStory)) {
-                    throw new Exception("OpenAI returned empty response");
-                }
+                if ($response->successful()) {
+                    $data = $response->json();
+                    $catStory = $data['choices'][0]['message']['content'] ?? '';
+                    
+                    if (empty($catStory)) {
+                        throw new Exception("OpenAI returned empty response");
+                    }
 
-                return trim($catStory);
+                    return trim($catStory);
+                } else {
+                    throw new Exception("OpenAI API error: " . $response->body());
+                }
                 
             } catch (Exception $e) {
                 $retryCount++;
@@ -125,7 +139,12 @@ class OpenAIService
                 try {
                     $chunkPrompt = $this->buildCatStoryPromptForChunk($chunks[$i], $i + 1, $chunkCount);
                     
-                    $response = $this->client->chat()->create([
+                    $response = Http::withHeaders([
+                        'Authorization' => 'Bearer ' . $this->apiKey,
+                        'Content-Type' => 'application/json',
+                    ])
+                    ->timeout(60)
+                    ->post('https://api.openai.com/v1/chat/completions', [
                         'model' => $this->model,
                         'messages' => [
                             [
@@ -144,9 +163,12 @@ class OpenAIService
                         'presence_penalty' => 0.1
                     ]);
 
-                    $chunkStory = $response->choices[0]->message->content ?? '';
-                    if (!empty($chunkStory)) {
-                        $chunkStories[] = trim($chunkStory);
+                    if ($response->successful()) {
+                        $data = $response->json();
+                        $chunkStory = $data['choices'][0]['message']['content'] ?? '';
+                        if (!empty($chunkStory)) {
+                            $chunkStories[] = trim($chunkStory);
+                        }
                     }
                     
                     // Small delay between API calls
@@ -180,12 +202,17 @@ class OpenAIService
     }
 
     /**
-     * Check if OpenAI service is available with SSL handling
+     * Check if OpenAI service is available
      */
     public function isAvailable(): bool
     {
         try {
-            $response = $this->client->chat()->create([
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json',
+            ])
+            ->timeout(10)
+            ->post('https://api.openai.com/v1/chat/completions', [
                 'model' => $this->model,
                 'messages' => [
                     [
@@ -196,7 +223,7 @@ class OpenAIService
                 'max_tokens' => 5
             ]);
 
-            return !empty($response->choices);
+            return $response->successful();
 
         } catch (Exception $e) {
             Log::warning("OpenAI service availability check failed: " . $e->getMessage());
@@ -248,8 +275,6 @@ class OpenAIService
         if (strlen($content) < 10) { // Reduced minimum
             $issues[] = "Content is too short (minimum 10 characters)";
         }
-        
-        // NO MAXIMUM LIMIT - Accept any size
         
         return [
             'valid' => empty($issues),

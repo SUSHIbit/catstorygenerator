@@ -6,6 +6,7 @@ use App\Models\Document;
 use App\Services\OpenAIService;
 use App\Jobs\GenerateCatStoryJob;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str; // Add this missing import
 
 class TestAICommand extends Command
 {
