@@ -35,9 +35,7 @@ class ProcessDocumentJob implements ShouldQueue
             
             if ($success) {
                 Log::info("Document processing completed successfully for document ID: {$this->document->id}");
-                
-                // Dispatch AI processing job (will be implemented in Phase 5)
-                // GenerateCatStoryJob::dispatch($this->document);
+                // Cat story generation job is automatically dispatched by DocumentParserService
             } else {
                 Log::error("Document processing failed for document ID: {$this->document->id}");
             }

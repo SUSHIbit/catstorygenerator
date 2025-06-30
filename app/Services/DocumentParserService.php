@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Document;
+use App\Jobs\GenerateCatStoryJob;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpWord\IOFactory as WordIOFactory;
@@ -58,7 +59,10 @@ class DocumentParserService
                 'status' => 'uploaded' // Ready for AI processing
             ]);
 
-            Log::info("Document parsing completed successfully for document ID: {$document->id}");
+            // Dispatch AI processing job to generate cat story
+            GenerateCatStoryJob::dispatch($document);
+
+            Log::info("Document parsing completed successfully for document ID: {$document->id}. Cat story generation dispatched.");
             return true;
 
         } catch (Exception $e) {
@@ -220,5 +224,32 @@ class DocumentParserService
         }
         
         return $stats;
+    }
+
+    /**
+     * Manually trigger cat story generation for a document
+     */
+    public function generateCatStoryNow(Document $document): bool
+    {
+        try {
+            if (empty($document->original_content)) {
+                throw new Exception("Document has no content to transform into cat story");
+            }
+
+            if ($document->hasStory()) {
+                Log::info("Document ID: {$document->id} already has a cat story");
+                return true;
+            }
+
+            // Dispatch the cat story generation job
+            GenerateCatStoryJob::dispatch($document);
+            
+            Log::info("Cat story generation manually triggered for document ID: {$document->id}");
+            return true;
+
+        } catch (Exception $e) {
+            Log::error("Failed to trigger cat story generation for document ID: {$document->id}. Error: " . $e->getMessage());
+            return false;
+        }
     }
 }

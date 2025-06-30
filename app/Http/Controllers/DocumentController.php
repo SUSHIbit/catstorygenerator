@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Document;
 use App\Jobs\ProcessDocumentJob;
+use App\Jobs\GenerateCatStoryJob;
 use App\Services\DocumentParserService;
+use App\Services\OpenAIService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -81,7 +83,7 @@ class DocumentController extends Controller
         ProcessDocumentJob::dispatch($document);
 
         return redirect()->route('documents.show', $document)
-            ->with('success', 'Document uploaded successfully! Processing has started.');
+            ->with('success', 'Document uploaded successfully! Processing has started and your cat story will be generated soon.');
     }
 
     public function destroy(Document $document): RedirectResponse
@@ -128,6 +130,21 @@ class DocumentController extends Controller
      */
     public function processNow(Document $document, DocumentParserService $parserService): RedirectResponse
     {
+        // Check if document already has content but no story
+        if ($document->original_content && !$document->hasStory()) {
+            // Just generate the cat story
+            $success = $parserService->generateCatStoryNow($document);
+            
+            if ($success) {
+                return redirect()->route('documents.show', $document)
+                    ->with('success', 'Cat story generation has been started! Check back in a few minutes.');
+            } else {
+                return redirect()->route('documents.show', $document)
+                    ->with('error', 'Failed to start cat story generation. Please try again.');
+            }
+        }
+
+        // Process the entire document if not processed yet
         if ($document->isCompleted() || $document->isProcessing()) {
             return redirect()->route('documents.show', $document)
                 ->with('error', 'Document is already processed or being processed.');
@@ -137,10 +154,68 @@ class DocumentController extends Controller
 
         if ($success) {
             return redirect()->route('documents.show', $document)
-                ->with('success', 'Document processed successfully!');
+                ->with('success', 'Document processing started! Your cat story will be generated soon.');
         } else {
             return redirect()->route('documents.show', $document)
                 ->with('error', 'Document processing failed. Check the error details.');
         }
+    }
+
+    /**
+     * Generate cat story only (when document already has content)
+     */
+    public function generateStory(Document $document, OpenAIService $openAIService): RedirectResponse
+    {
+        if (!$document->original_content) {
+            return redirect()->route('documents.show', $document)
+                ->with('error', 'Document must be processed first before generating a cat story.');
+        }
+
+        if ($document->hasStory()) {
+            return redirect()->route('documents.show', $document)
+                ->with('info', 'Document already has a cat story.');
+        }
+
+        // Check if OpenAI service is available
+        if (!$openAIService->isAvailable()) {
+            return redirect()->route('documents.show', $document)
+                ->with('error', 'AI service is currently unavailable. Please try again later.');
+        }
+
+        // Dispatch cat story generation job
+        GenerateCatStoryJob::dispatch($document);
+
+        return redirect()->route('documents.show', $document)
+            ->with('success', 'Cat story generation has been started! This may take a few minutes.');
+    }
+
+    /**
+     * Regenerate cat story (replace existing story)
+     */
+    public function regenerateStory(Document $document, OpenAIService $openAIService): RedirectResponse
+    {
+        if (!$document->original_content) {
+            return redirect()->route('documents.show', $document)
+                ->with('error', 'Document must be processed first before generating a cat story.');
+        }
+
+        // Check if OpenAI service is available
+        if (!$openAIService->isAvailable()) {
+            return redirect()->route('documents.show', $document)
+                ->with('error', 'AI service is currently unavailable. Please try again later.');
+        }
+
+        // Clear existing story and reset status
+        $document->update([
+            'cat_story' => null,
+            'status' => 'uploaded',
+            'processed_at' => null
+        ]);
+
+        // Dispatch cat story generation job
+        GenerateCatStoryJob::dispatch($document);
+
+        return redirect()->route('documents.show', $document)
+            ->with('success', 'Cat story regeneration has been started! This may take a few minutes.');
     }
 }
