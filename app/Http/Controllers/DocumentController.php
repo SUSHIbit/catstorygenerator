@@ -12,6 +12,7 @@ use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class DocumentController extends Controller
 {
@@ -45,45 +46,234 @@ class DocumentController extends Controller
 
     public function create(): View
     {
-        return view('documents.create');
+        // Get PHP upload limits for display
+        $uploadLimits = $this->getUploadLimits();
+        return view('documents.create', compact('uploadLimits'));
     }
 
     public function store(Request $request): RedirectResponse
     {
-        $request->validate([
-            'file' => [
-                'required',
-                'file',
-                'max:2097152', // 2GB max - UNLIMITED
-                'mimes:pdf,doc,docx,ppt,pptx'
-            ],
-            'title' => 'nullable|string|max:255'
-        ]);
+        // Enhanced validation with better error handling
+        try {
+            // First, check if we have a file at all
+            if (!$request->hasFile('file')) {
+                Log::error('Upload failed: No file in request', [
+                    'post_data' => $request->all(),
+                    'files_data' => $_FILES ?? 'No $_FILES data'
+                ]);
+                
+                return redirect()->back()
+                    ->withInput()
+                    ->withErrors(['file' => 'No file was uploaded. Please select a file and try again.']);
+            }
 
-        $file = $request->file('file');
-        
-        // Generate unique filename
-        $filename = time() . '_' . Str::random(10) . '.' . $file->getClientOriginalExtension();
-        
-        // Store file
-        $filepath = $file->storeAs('documents/original', $filename, 'public');
-        
-        // Create document record
-        $document = Document::create([
-            'user_id' => auth()->id(),
-            'title' => $request->title ?: pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME),
-            'filename' => $file->getClientOriginalName(),
-            'filepath' => $filepath,
-            'file_type' => strtolower($file->getClientOriginalExtension()),
-            'file_size' => $file->getSize(),
-            'status' => 'uploaded'
-        ]);
+            $file = $request->file('file');
+            
+            // Check for upload errors
+            if (!$file->isValid()) {
+                $error = $file->getError();
+                $errorMessage = $this->getUploadErrorMessage($error);
+                
+                Log::error('Upload failed: File upload error', [
+                    'error_code' => $error,
+                    'error_message' => $errorMessage,
+                    'file_size' => $file->getSize(),
+                    'php_limits' => $this->getUploadLimits()
+                ]);
 
-        // Dispatch processing job
-        ProcessDocumentJob::dispatch($document);
+                return redirect()->back()
+                    ->withInput()
+                    ->withErrors(['file' => $errorMessage]);
+            }
 
-        return redirect()->route('documents.show', $document)
-            ->with('success', 'Document uploaded successfully! Processing has started and your cat story will be generated soon.');
+            // Validate file
+            $request->validate([
+                'file' => [
+                    'required',
+                    'file',
+                    'max:' . $this->getMaxFileSizeInKB(), // Dynamic max size based on PHP settings
+                    'mimes:pdf,doc,docx,ppt,pptx'
+                ],
+                'title' => 'nullable|string|max:255'
+            ], [
+                'file.max' => 'The file is too large. Maximum allowed size is ' . $this->getMaxFileSizeFormatted() . '.',
+                'file.mimes' => 'Only PDF, DOC, DOCX, PPT, and PPTX files are allowed.',
+                'file.required' => 'Please select a file to upload.',
+            ]);
+
+            Log::info('Upload validation passed', [
+                'file_name' => $file->getClientOriginalName(),
+                'file_size' => $file->getSize(),
+                'file_type' => $file->getClientOriginalExtension(),
+            ]);
+
+            // Generate unique filename
+            $filename = time() . '_' . Str::random(10) . '.' . $file->getClientOriginalExtension();
+            
+            // Store file with better error handling
+            try {
+                $filepath = $file->storeAs('documents/original', $filename, 'public');
+                
+                if (!$filepath) {
+                    throw new \Exception('Failed to store file');
+                }
+                
+                Log::info('File stored successfully', ['filepath' => $filepath]);
+                
+            } catch (\Exception $e) {
+                Log::error('File storage failed', [
+                    'error' => $e->getMessage(),
+                    'file_name' => $file->getClientOriginalName(),
+                    'storage_path' => storage_path('app/public/documents/original')
+                ]);
+                
+                return redirect()->back()
+                    ->withInput()
+                    ->withErrors(['file' => 'Failed to save the uploaded file. Please try again.']);
+            }
+            
+            // Create document record
+            $document = Document::create([
+                'user_id' => auth()->id(),
+                'title' => $request->title ?: pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME),
+                'filename' => $file->getClientOriginalName(),
+                'filepath' => $filepath,
+                'file_type' => strtolower($file->getClientOriginalExtension()),
+                'file_size' => $file->getSize(),
+                'status' => 'uploaded'
+            ]);
+
+            Log::info('Document record created', ['document_id' => $document->id]);
+
+            // Dispatch processing job
+            ProcessDocumentJob::dispatch($document);
+
+            return redirect()->route('documents.show', $document)
+                ->with('success', 'Document uploaded successfully! Processing has started and your cat story will be generated soon.');
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Laravel validation errors
+            Log::error('Upload validation failed', [
+                'errors' => $e->errors(),
+                'request_data' => $request->except(['file'])
+            ]);
+            
+            return redirect()->back()
+                ->withInput()
+                ->withErrors($e->errors());
+                
+        } catch (\Exception $e) {
+            // Any other unexpected errors
+            Log::error('Unexpected upload error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->except(['file'])
+            ]);
+            
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['file' => 'An unexpected error occurred during upload. Please try again.']);
+        }
+    }
+
+    /**
+     * Get upload limits from PHP configuration
+     */
+    private function getUploadLimits(): array
+    {
+        $uploadMaxFilesize = ini_get('upload_max_filesize');
+        $postMaxSize = ini_get('post_max_size');
+        $memoryLimit = ini_get('memory_limit');
+        $maxExecutionTime = ini_get('max_execution_time');
+        $maxInputTime = ini_get('max_input_time');
+
+        return [
+            'upload_max_filesize' => $uploadMaxFilesize,
+            'upload_max_filesize_bytes' => $this->parseSize($uploadMaxFilesize),
+            'post_max_size' => $postMaxSize,
+            'post_max_size_bytes' => $this->parseSize($postMaxSize),
+            'memory_limit' => $memoryLimit,
+            'max_execution_time' => $maxExecutionTime,
+            'max_input_time' => $maxInputTime,
+        ];
+    }
+
+    /**
+     * Get maximum file size in KB for Laravel validation
+     */
+    private function getMaxFileSizeInKB(): int
+    {
+        $limits = $this->getUploadLimits();
+        $maxSize = min($limits['upload_max_filesize_bytes'], $limits['post_max_size_bytes']);
+        return floor($maxSize / 1024); // Convert to KB for Laravel validation
+    }
+
+    /**
+     * Get formatted maximum file size for display
+     */
+    private function getMaxFileSizeFormatted(): string
+    {
+        $limits = $this->getUploadLimits();
+        $maxSize = min($limits['upload_max_filesize_bytes'], $limits['post_max_size_bytes']);
+        return $this->formatBytes($maxSize);
+    }
+
+    /**
+     * Parse size string (like "2M") to bytes
+     */
+    private function parseSize(string $size): int
+    {
+        $size = trim($size);
+        $last = strtolower($size[strlen($size) - 1]);
+        $size = (int) $size;
+
+        switch ($last) {
+            case 'g': $size *= 1024;
+            case 'm': $size *= 1024;
+            case 'k': $size *= 1024;
+        }
+
+        return $size;
+    }
+
+    /**
+     * Format bytes to human readable string
+     */
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes >= 1073741824) {
+            return number_format($bytes / 1073741824, 2) . ' GB';
+        } elseif ($bytes >= 1048576) {
+            return number_format($bytes / 1048576, 2) . ' MB';
+        } elseif ($bytes >= 1024) {
+            return number_format($bytes / 1024, 2) . ' KB';
+        }
+        return $bytes . ' bytes';
+    }
+
+    /**
+     * Get user-friendly error message for upload errors
+     */
+    private function getUploadErrorMessage(int $errorCode): string
+    {
+        switch ($errorCode) {
+            case UPLOAD_ERR_INI_SIZE:
+                return 'The uploaded file exceeds the maximum file size allowed by the server (' . ini_get('upload_max_filesize') . ').';
+            case UPLOAD_ERR_FORM_SIZE:
+                return 'The uploaded file exceeds the maximum file size specified in the form.';
+            case UPLOAD_ERR_PARTIAL:
+                return 'The file was only partially uploaded. Please try again.';
+            case UPLOAD_ERR_NO_FILE:
+                return 'No file was uploaded. Please select a file and try again.';
+            case UPLOAD_ERR_NO_TMP_DIR:
+                return 'Missing temporary folder. Please contact support.';
+            case UPLOAD_ERR_CANT_WRITE:
+                return 'Failed to write file to disk. Please contact support.';
+            case UPLOAD_ERR_EXTENSION:
+                return 'A PHP extension stopped the file upload. Please contact support.';
+            default:
+                return 'An unknown error occurred during file upload. Please try again.';
+        }
     }
 
     public function destroy(Document $document): RedirectResponse

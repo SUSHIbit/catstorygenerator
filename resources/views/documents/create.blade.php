@@ -6,7 +6,7 @@
                     <span class="text-3xl mr-3">📤</span>
                     {{ __('Upload Document') }}
                 </h2>
-                <p class="text-slate-600 mt-1">Transform your documents into entertaining cat stories - No limits!</p>
+                <p class="text-slate-600 mt-1">Transform your documents into entertaining cat stories</p>
             </div>
             <div class="mt-4 sm:mt-0">
                 <a href="{{ route('documents.index') }}" 
@@ -21,6 +21,42 @@
     <div class="py-8">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
             
+            <!-- Show upload limits info -->
+            @if(isset($uploadLimits))
+            <div class="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <h4 class="font-medium text-blue-800 mb-2 flex items-center">
+                    <span class="mr-2">ℹ️</span>
+                    Current Upload Limits
+                </h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div>
+                        <span class="text-blue-700 font-medium">Max File Size:</span>
+                        <span class="text-blue-600">{{ $uploadLimits['upload_max_filesize'] }}</span>
+                    </div>
+                    <div>
+                        <span class="text-blue-700 font-medium">Max Post Size:</span>
+                        <span class="text-blue-600">{{ $uploadLimits['post_max_size'] }}</span>
+                    </div>
+                    <div>
+                        <span class="text-blue-700 font-medium">Memory Limit:</span>
+                        <span class="text-blue-600">{{ $uploadLimits['memory_limit'] }}</span>
+                    </div>
+                </div>
+                @php
+                    $maxSizeBytes = min($uploadLimits['upload_max_filesize_bytes'], $uploadLimits['post_max_size_bytes']);
+                    $maxSizeMB = round($maxSizeBytes / (1024 * 1024), 1);
+                @endphp
+                @if($maxSizeMB < 10)
+                    <div class="mt-3 p-3 bg-yellow-100 border border-yellow-200 rounded-lg">
+                        <p class="text-yellow-800 text-sm">
+                            <strong>⚠️ Notice:</strong> Your server's upload limit is {{ $maxSizeMB }}MB. 
+                            For larger documents, you may need to increase PHP settings or contact your hosting provider.
+                        </p>
+                    </div>
+                @endif
+            </div>
+            @endif
+
             <!-- Progress Steps -->
             <div class="mb-8">
                 <div class="flex items-center justify-center space-x-4">
@@ -41,15 +77,29 @@
                 </div>
             </div>
 
+            <!-- Error Display -->
+            @if($errors->any())
+                <div class="mb-6 bg-red-50 border border-red-200 rounded-xl p-4">
+                    <h4 class="font-medium text-red-800 mb-2 flex items-center">
+                        <span class="mr-2">❌</span>
+                        Upload Error
+                    </h4>
+                    <ul class="space-y-1">
+                        @foreach($errors->all() as $error)
+                            <li class="text-red-700 text-sm">{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             <div class="bg-white overflow-hidden shadow-sm rounded-xl border border-slate-200">
                 <div class="p-8">
                     <!-- Welcome Section -->
                     <div class="text-center mb-8">
                         <div class="text-6xl mb-4 float-animation">🐱</div>
-                        <h3 class="text-2xl font-bold text-slate-800 mb-2">Upload Any Document</h3>
+                        <h3 class="text-2xl font-bold text-slate-800 mb-2">Upload Your Document</h3>
                         <p class="text-slate-600 max-w-2xl mx-auto">
-                            Upload any document of any size! Our AI cat narrator can handle everything from small PDFs to massive presentations.
-                            No limits on file size or pages!
+                            Upload any document and our AI cat narrator will transform it into an easy-to-understand story!
                         </p>
                     </div>
 
@@ -97,7 +147,12 @@
                                         <span class="mr-2">📄</span>
                                         Choose File
                                     </div>
-                                    <p class="text-sm text-slate-400 mt-4">Supports: PDF, DOC, DOCX, PPT, PPTX (No size limit, any number of pages)</p>
+                                    <p class="text-sm text-slate-400 mt-4">
+                                        Supports: PDF, DOC, DOCX, PPT, PPTX 
+                                        @if(isset($uploadLimits))
+                                            (Max: {{ min($uploadLimits['upload_max_filesize'], $uploadLimits['post_max_size']) }})
+                                        @endif
+                                    </p>
                                 </div>
                                 
                                 <!-- File Selected State -->
@@ -145,6 +200,13 @@
                                         <div id="progress-bar" class="gradient-bg h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
                                     </div>
                                     <p class="text-sm text-slate-500" id="upload-status">Preparing upload...</p>
+                                </div>
+
+                                <!-- Size Warning -->
+                                <div id="size-warning" class="hidden mt-4 p-3 bg-yellow-100 border border-yellow-200 rounded-lg">
+                                    <p class="text-yellow-800 text-sm">
+                                        <strong>⚠️ Large File:</strong> This file may take longer to upload and process.
+                                    </p>
                                 </div>
                             </div>
 
@@ -195,14 +257,16 @@
                                 <div>
                                     <h6 class="font-medium text-slate-700 mb-3">Requirements:</h6>
                                     <div class="space-y-2 text-sm text-slate-600">
-                                        <div class="flex items-start">
-                                            <span class="text-green-600 mr-2 mt-0.5">✓</span>
-                                            <span>No file size limit - Any size accepted</span>
-                                        </div>
-                                        <div class="flex items-start">
-                                            <span class="text-green-600 mr-2 mt-0.5">✓</span>
-                                            <span>No page limit - Any number of pages</span>
-                                        </div>
+                                        @if(isset($uploadLimits))
+                                            @php
+                                                $maxSizeBytes = min($uploadLimits['upload_max_filesize_bytes'], $uploadLimits['post_max_size_bytes']);
+                                                $maxSizeMB = round($maxSizeBytes / (1024 * 1024), 1);
+                                            @endphp
+                                            <div class="flex items-start">
+                                                <span class="text-blue-600 mr-2 mt-0.5">📏</span>
+                                                <span>Maximum file size: {{ $maxSizeMB }}MB</span>
+                                            </div>
+                                        @endif
                                         <div class="flex items-start">
                                             <span class="text-green-600 mr-2 mt-0.5">✓</span>
                                             <span>Text must be selectable (not scanned images)</span>
@@ -216,39 +280,54 @@
                                             <span>At least 10 characters of content</span>
                                         </div>
                                         <div class="flex items-start">
-                                            <span class="text-blue-600 mr-2 mt-0.5">ℹ️</span>
-                                            <span>Large documents may take 30-60 minutes to process</span>
-                                        </div>
-                                        <div class="flex items-start">
                                             <span class="text-blue-600 mr-2 mt-0.5">💡</span>
-                                            <span>Very large files are processed in chunks for best results</span>
+                                            <span>Large documents may take several minutes to process</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
+                        <!-- Troubleshooting Section -->
+                        @if(isset($uploadLimits) && min($uploadLimits['upload_max_filesize_bytes'], $uploadLimits['post_max_size_bytes']) < 10485760)
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
+                            <h5 class="font-medium text-yellow-800 mb-4 flex items-center">
+                                <span class="mr-2">⚠️</span>
+                                Upload Limit Notice
+                            </h5>
+                            <p class="text-yellow-700 mb-4">
+                                Your server currently has a {{ round(min($uploadLimits['upload_max_filesize_bytes'], $uploadLimits['post_max_size_bytes']) / (1024 * 1024), 1) }}MB upload limit. 
+                                If you need to upload larger files, you may need to:
+                            </p>
+                            <ul class="text-yellow-700 text-sm space-y-1 ml-4">
+                                <li>• Contact your hosting provider to increase upload limits</li>
+                                <li>• Compress your document before uploading</li>
+                                <li>• Split large documents into smaller sections</li>
+                            </ul>
+                        </div>
+                        @endif
+
                         <!-- What Happens Next -->
                         <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-6">
                             <h5 class="font-medium text-slate-800 mb-4 flex items-center">
                                 <span class="mr-2">🔮</span>
-                                What happens with large documents?
+                                What happens after upload?
                             </h5>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div class="text-center">
                                     <div class="text-3xl mb-2">🔧</div>
-                                    <h6 class="font-medium text-slate-700 mb-1">Smart Processing</h6>
-                                    <p class="text-sm text-slate-600">Large documents are automatically processed in chunks to ensure reliability</p>
+                                    <h6 class="font-medium text-slate-700 mb-1">Text Extraction</h6>
+                                    <p class="text-sm text-slate-600">We extract all readable text from your document</p>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-3xl mb-2">🤖</div>
+                                    <h6 class="font-medium text-slate-700 mb-1">AI Analysis</h6>
+                                    <p class="text-sm text-slate-600">Our AI cat narrator reads and understands the content</p>
                                 </div>
                                 <div class="text-center">
                                     <div class="text-3xl mb-2">🐱</div>
-                                    <h6 class="font-medium text-slate-700 mb-1">Cat-sized Stories</h6>
-                                    <p class="text-sm text-slate-600">Even huge documents become simple, digestible cat stories</p>
-                                </div>
-                                <div class="text-center">
-                                    <div class="text-3xl mb-2">⏰</div>
-                                    <h6 class="font-medium text-slate-700 mb-1">Patient Processing</h6>
-                                    <p class="text-sm text-slate-600">Very large files may take time, but we'll process everything</p>
+                                    <h6 class="font-medium text-slate-700 mb-1">Cat Story Creation</h6>
+                                    <p class="text-sm text-slate-600">Complex ideas become simple, fun cat stories!</p>
                                 </div>
                             </div>
                         </div>
@@ -270,11 +349,13 @@
             const selectedFilesize = document.getElementById('selected-filesize');
             const removeFileBtn = document.getElementById('remove-file');
             const uploadForm = document.getElementById('upload-form');
-            const processBtn = document.getElementById('process-btn');
-            const progressBar = document.getElementById('progress-bar');
-            const uploadStatus = document.getElementById('upload-status');
+            const sizeWarning = document.getElementById('size-warning');
 
-            // File validation - NO SIZE LIMITS
+            // Get server limits from PHP
+            const serverLimits = @json($uploadLimits ?? ['upload_max_filesize_bytes' => 2097152, 'post_max_size_bytes' => 8388608]);
+            const maxUploadSize = Math.min(serverLimits.upload_max_filesize_bytes || 2097152, serverLimits.post_max_size_bytes || 8388608);
+
+            // File validation with server limits
             function validateFile(file) {
                 const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'];
                 const allowedExtensions = ['pdf', 'doc', 'docx', 'ppt', 'pptx'];
@@ -286,18 +367,24 @@
                     return false;
                 }
 
-                // NO SIZE LIMIT - Accept any file size
+                // Check file size against server limits
+                if (file.size > maxUploadSize) {
+                    const maxSizeMB = (maxUploadSize / (1024 * 1024)).toFixed(1);
+                    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+                    CatStoryApp.showNotification(`File size (${fileSizeMB}MB) exceeds server limit (${maxSizeMB}MB)`, 'error');
+                    return false;
+                }
+
                 return true;
             }
 
-            // Estimate processing time for large files
+            // Estimate processing time
             function estimateProcessingTime(fileSize) {
                 if (fileSize < 1024 * 1024) return '1-2 minutes'; // < 1MB
-                if (fileSize < 10 * 1024 * 1024) return '2-5 minutes'; // < 10MB
+                if (fileSize < 5 * 1024 * 1024) return '2-3 minutes'; // < 5MB
+                if (fileSize < 10 * 1024 * 1024) return '3-5 minutes'; // < 10MB
                 if (fileSize < 50 * 1024 * 1024) return '5-10 minutes'; // < 50MB
-                if (fileSize < 100 * 1024 * 1024) return '10-20 minutes'; // < 100MB
-                if (fileSize < 500 * 1024 * 1024) return '20-45 minutes'; // < 500MB
-                return '30-60 minutes'; // Very large files
+                return '10+ minutes'; // Very large files
             }
 
             // Handle file selection
@@ -321,16 +408,18 @@
                 dropArea.classList.add('border-green-300', 'bg-green-50');
                 dropArea.classList.remove('border-slate-300');
                 
+                // Show size warning for large files
+                if (file.size > 10 * 1024 * 1024) { // > 10MB
+                    sizeWarning.classList.remove('hidden');
+                } else {
+                    sizeWarning.classList.add('hidden');
+                }
+                
                 // Auto-fill title if empty
                 const titleInput = document.getElementById('title');
                 if (!titleInput.value) {
                     const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
                     titleInput.value = nameWithoutExt;
-                }
-
-                // Show warning for very large files
-                if (file.size > 100 * 1024 * 1024) { // > 100MB
-                    CatStoryApp.showNotification('Large file detected! Processing may take 30-60 minutes.', 'info');
                 }
             }
 
@@ -341,6 +430,7 @@
                 dropContent.classList.remove('hidden');
                 fileSelected.classList.add('hidden');
                 uploadProgress.classList.add('hidden');
+                sizeWarning.classList.add('hidden');
                 dropArea.classList.remove('border-green-300', 'bg-green-50');
                 dropArea.classList.add('border-slate-300');
             }
@@ -359,7 +449,7 @@
 
             removeFileBtn.addEventListener('click', removeFile);
 
-            // Drag and drop
+            // Drag and drop functionality
             ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
                 dropArea.addEventListener(eventName, preventDefaults, false);
                 document.body.addEventListener(eventName, preventDefaults, false);
@@ -398,7 +488,7 @@
                 }
             }
 
-            // Form submission with progress for large files
+            // Enhanced form submission with better error handling
             uploadForm.addEventListener('submit', function(e) {
                 e.preventDefault();
                 
@@ -408,19 +498,24 @@
                 }
 
                 const file = fileInput.files[0];
-                const isLargeFile = file.size > 50 * 1024 * 1024; // > 50MB
+                
+                // Final validation before upload
+                if (!validateFile(file)) {
+                    return;
+                }
 
                 // Show upload progress
                 fileSelected.classList.add('hidden');
                 uploadProgress.classList.remove('hidden');
                 
-                // Simulate upload progress with different timing for large files
+                // Progress simulation with more realistic timing
                 let progress = 0;
-                const maxProgress = 95;
-                const progressSpeed = isLargeFile ? 500 : 200; // Slower for large files
+                const maxProgress = 90; // Don't reach 100% until actually complete
+                const fileSize = file.size;
+                const progressSpeed = fileSize > 10 * 1024 * 1024 ? 800 : 400; // Slower for large files
                 
                 const progressInterval = setInterval(() => {
-                    const increment = isLargeFile ? Math.random() * 5 : Math.random() * 15;
+                    const increment = Math.random() * 8 + 2; // 2-10% increments
                     progress += increment;
                     
                     if (progress > maxProgress) {
@@ -428,60 +523,25 @@
                         clearInterval(progressInterval);
                     }
                     
-                    progressBar.style.width = progress + '%';
+                    document.getElementById('progress-bar').style.width = progress + '%';
                     
+                    // Update status messages
                     if (progress < 20) {
-                        uploadStatus.textContent = isLargeFile ? 'Uploading large file...' : 'Uploading file...';
+                        document.getElementById('upload-status').textContent = 'Uploading file...';
                     } else if (progress < 50) {
-                        uploadStatus.textContent = 'Validating document...';
+                        document.getElementById('upload-status').textContent = 'Validating document...';
                     } else if (progress < 80) {
-                        uploadStatus.textContent = isLargeFile ? 'Processing large file...' : 'Processing file...';
+                        document.getElementById('upload-status').textContent = 'Processing file...';
                     } else {
-                        uploadStatus.textContent = 'Almost done...';
+                        document.getElementById('upload-status').textContent = 'Almost complete...';
                     }
                 }, progressSpeed);
 
-                // Actually submit the form
-                const formData = new FormData(this);
-                
-                fetch(this.action, {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-                    }
-                })
-                .then(response => {
-                    if (response.ok) {
-                        progress = 100;
-                        progressBar.style.width = '100%';
-                        uploadStatus.textContent = 'Upload complete! Redirecting...';
-                        
-                        // Show success message for large files
-                        if (isLargeFile) {
-                            CatStoryApp.showNotification('Large file uploaded successfully! Processing will continue in the background.', 'success');
-                        }
-                        
-                        // Redirect after a short delay
-                        setTimeout(() => {
-                            window.location.href = response.url || '/documents';
-                        }, isLargeFile ? 2000 : 1000);
-                    } else {
-                        throw new Error('Upload failed');
-                    }
-                })
-                .catch(error => {
-                    clearInterval(progressInterval);
-                    console.error('Upload error:', error);
-                    CatStoryApp.showNotification('Upload failed. Please try again.', 'error');
-                    
-                    // Reset to file selected state
-                    uploadProgress.classList.add('hidden');
-                    fileSelected.classList.remove('hidden');
-                });
+                // Submit the actual form
+                this.submit();
             });
 
-            // Prevent accidental page leave during upload
+            // Prevent accidental page navigation during upload
             let uploading = false;
             
             uploadForm.addEventListener('submit', () => {
@@ -519,10 +579,5 @@
     
     .file-drop-zone {
         transition: all 0.3s ease;
-    }
-    
-    .file-drop-zone.drag-over {
-        border-color: #3b82f6 !important;
-        background-color: #eff6ff !important;
     }
 </style>
