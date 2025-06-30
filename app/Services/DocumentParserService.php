@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpWord\IOFactory as WordIOFactory;
 use PhpOffice\PhpPresentation\IOFactory as PresentationIOFactory;
 use Smalot\PdfParser\Parser as PdfParser;
+use Smalot\PdfParser\Config;
 use Exception;
 
 class DocumentParserService
@@ -17,16 +18,31 @@ class DocumentParserService
 
     public function __construct()
     {
-        $this->pdfParser = new PdfParser();
+        // Configure PDF parser with memory-safe settings
+        $config = new Config();
+        $config->setRetainImageContent(false); // Don't load images
+        $config->setIgnoreEncryption(true);
+        $config->setHorizontalOffset('');
+        
+        $this->pdfParser = new PdfParser([], $config);
     }
 
     /**
-     * Parse document and extract text content
+     * Parse document and extract text content with memory management
      */
     public function parseDocument(Document $document): bool
     {
         try {
             Log::info("Starting document parsing for document ID: {$document->id}");
+            
+            // Check file size first
+            if ($document->file_size > 10 * 1024 * 1024) { // 10MB
+                throw new Exception("File too large for processing (max 10MB)");
+            }
+            
+            // Increase memory limit for this operation
+            $originalMemoryLimit = ini_get('memory_limit');
+            ini_set('memory_limit', '512M');
             
             // Mark document as processing
             $document->markAsProcessing();
@@ -38,11 +54,11 @@ class DocumentParserService
                 throw new Exception("File not found: {$filePath}");
             }
 
-            // Extract text based on file type
+            // Extract text based on file type with memory management
             $extractedText = match($document->file_type) {
-                'pdf' => $this->extractFromPdf($filePath),
-                'doc', 'docx' => $this->extractFromWord($filePath),
-                'ppt', 'pptx' => $this->extractFromPowerPoint($filePath),
+                'pdf' => $this->extractFromPdfSafe($filePath),
+                'doc', 'docx' => $this->extractFromWordSafe($filePath),
+                'ppt', 'pptx' => $this->extractFromPowerPointSafe($filePath),
                 default => throw new Exception("Unsupported file type: {$document->file_type}")
             };
 
@@ -59,14 +75,26 @@ class DocumentParserService
                 'status' => 'uploaded' // Ready for AI processing
             ]);
 
+            // Free memory
+            unset($extractedText, $cleanedText);
+            gc_collect_cycles();
+            
+            // Restore original memory limit
+            ini_set('memory_limit', $originalMemoryLimit);
+
             // Dispatch AI processing job to generate cat story
             GenerateCatStoryJob::dispatch($document);
 
-            Log::info("Document parsing completed successfully for document ID: {$document->id}. Cat story generation dispatched.");
+            Log::info("Document parsing completed successfully for document ID: {$document->id}");
             return true;
 
         } catch (Exception $e) {
             Log::error("Document parsing failed for document ID: {$document->id}. Error: " . $e->getMessage());
+            
+            // Restore memory limit on error
+            if (isset($originalMemoryLimit)) {
+                ini_set('memory_limit', $originalMemoryLimit);
+            }
             
             $document->markAsFailed("Failed to extract text: " . $e->getMessage());
             return false;
@@ -74,13 +102,41 @@ class DocumentParserService
     }
 
     /**
-     * Extract text from PDF files
+     * Memory-safe PDF extraction
      */
-    private function extractFromPdf(string $filePath): string
+    private function extractFromPdfSafe(string $filePath): string
     {
         try {
+            // Check file size before processing
+            $fileSize = filesize($filePath);
+            if ($fileSize > 5 * 1024 * 1024) { // 5MB limit for PDFs
+                throw new Exception("PDF file too large for text extraction");
+            }
+            
             $pdf = $this->pdfParser->parseFile($filePath);
-            $text = $pdf->getText();
+            $text = '';
+            
+            // Extract text page by page to manage memory
+            $pages = $pdf->getPages();
+            $pageCount = count($pages);
+            
+            if ($pageCount > 50) {
+                throw new Exception("PDF has too many pages (max 50 pages)");
+            }
+            
+            foreach ($pages as $pageNumber => $page) {
+                $pageText = $page->getText();
+                $text .= $pageText . "\n";
+                
+                // Free memory after each page
+                unset($pageText);
+                
+                // Stop if we have enough content
+                if (strlen($text) > 50000) {
+                    $text .= "\n[Content truncated - document too long]";
+                    break;
+                }
+            }
             
             if (empty($text)) {
                 throw new Exception("PDF appears to be empty or contains only images");
@@ -94,17 +150,32 @@ class DocumentParserService
     }
 
     /**
-     * Extract text from Word documents (.doc, .docx)
+     * Memory-safe Word document extraction
      */
-    private function extractFromWord(string $filePath): string
+    private function extractFromWordSafe(string $filePath): string
     {
         try {
+            $fileSize = filesize($filePath);
+            if ($fileSize > 5 * 1024 * 1024) { // 5MB limit
+                throw new Exception("Word document too large for text extraction");
+            }
+            
             $phpWord = WordIOFactory::load($filePath);
             $text = '';
             
-            foreach ($phpWord->getSections() as $section) {
+            foreach ($phpWord->getSections() as $sectionIndex => $section) {
                 foreach ($section->getElements() as $element) {
-                    $text .= $this->extractTextFromWordElement($element) . "\n";
+                    $elementText = $this->extractTextFromWordElement($element);
+                    $text .= $elementText . "\n";
+                    
+                    // Free memory
+                    unset($elementText);
+                    
+                    // Stop if we have enough content
+                    if (strlen($text) > 50000) {
+                        $text .= "\n[Content truncated - document too long]";
+                        break 2;
+                    }
                 }
             }
             
@@ -120,15 +191,28 @@ class DocumentParserService
     }
 
     /**
-     * Extract text from PowerPoint presentations (.ppt, .pptx)
+     * Memory-safe PowerPoint extraction
      */
-    private function extractFromPowerPoint(string $filePath): string
+    private function extractFromPowerPointSafe(string $filePath): string
     {
         try {
+            $fileSize = filesize($filePath);
+            if ($fileSize > 5 * 1024 * 1024) { // 5MB limit
+                throw new Exception("PowerPoint file too large for text extraction");
+            }
+            
             $presentation = PresentationIOFactory::load($filePath);
             $text = '';
+            $slideCount = 0;
             
             foreach ($presentation->getAllSlides() as $slideIndex => $slide) {
+                $slideCount++;
+                
+                if ($slideCount > 30) { // Limit slides
+                    $text .= "\n[Remaining slides truncated - too many slides]";
+                    break;
+                }
+                
                 $text .= "Slide " . ($slideIndex + 1) . ":\n";
                 
                 foreach ($slide->getShapeCollection() as $shape) {
@@ -137,9 +221,16 @@ class DocumentParserService
                         if (!empty($slideText)) {
                             $text .= $slideText . "\n";
                         }
+                        unset($slideText);
                     }
                 }
                 $text .= "\n";
+                
+                // Stop if we have enough content
+                if (strlen($text) > 50000) {
+                    $text .= "\n[Content truncated - document too long]";
+                    break;
+                }
             }
             
             if (empty($text)) {
@@ -160,22 +251,32 @@ class DocumentParserService
     {
         $text = '';
         
-        if (method_exists($element, 'getText')) {
-            $text .= $element->getText();
-        } elseif (method_exists($element, 'getElements')) {
-            foreach ($element->getElements() as $childElement) {
-                $text .= $this->extractTextFromWordElement($childElement);
+        try {
+            if (method_exists($element, 'getText')) {
+                $text .= $element->getText();
+            } elseif (method_exists($element, 'getElements')) {
+                foreach ($element->getElements() as $childElement) {
+                    $text .= $this->extractTextFromWordElement($childElement);
+                }
             }
+        } catch (Exception $e) {
+            // Skip problematic elements
+            Log::warning("Skipped problematic Word element: " . $e->getMessage());
         }
         
         return $text;
     }
 
     /**
-     * Clean and normalize extracted text
+     * Clean and normalize extracted text with memory management
      */
     private function cleanExtractedText(string $text): string
     {
+        // Truncate if too long before processing
+        if (strlen($text) > 100000) {
+            $text = substr($text, 0, 100000) . "\n\n[Content truncated due to length...]";
+        }
+        
         // Remove excessive whitespace
         $text = preg_replace('/\s+/', ' ', $text);
         
@@ -194,11 +295,6 @@ class DocumentParserService
         // Ensure minimum content length
         if (strlen($text) < 50) {
             throw new Exception("Document content is too short (less than 50 characters)");
-        }
-        
-        // Limit maximum content length to prevent memory issues
-        if (strlen($text) > 100000) {
-            $text = substr($text, 0, 100000) . "\n\n[Content truncated due to length...]";
         }
         
         return $text;
