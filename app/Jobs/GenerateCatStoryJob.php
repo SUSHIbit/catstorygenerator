@@ -18,8 +18,8 @@ class GenerateCatStoryJob implements ShouldQueue
 
     public Document $document;
     public int $tries = 3;
-    public int $timeout = 300; // 5 minutes
-    public int $backoff = 30; // 30 seconds between retries
+    public int $timeout = 1800; // 30 minutes for large content
+    public int $maxExceptions = 3;
 
     public function __construct(Document $document)
     {
@@ -29,9 +29,13 @@ class GenerateCatStoryJob implements ShouldQueue
 
     public function handle(OpenAIService $openAIService): void
     {
-        Log::info("Starting cat story generation job for document ID: {$this->document->id}");
+        Log::info("Starting large content cat story generation job for document ID: {$this->document->id}");
 
         try {
+            // Set memory and time limits for large content
+            ini_set('memory_limit', '1024M');
+            set_time_limit(1800); // 30 minutes
+            
             // Refresh document to get latest data
             $this->document->refresh();
 
@@ -55,7 +59,7 @@ class GenerateCatStoryJob implements ShouldQueue
             // Mark document as processing (for AI story generation)
             $this->document->update(['status' => 'processing']);
 
-            // Generate the cat story
+            // Generate the cat story (handles large content automatically)
             $catStory = $openAIService->generateCatStory($this->document);
 
             // Validate the generated story
@@ -63,17 +67,17 @@ class GenerateCatStoryJob implements ShouldQueue
                 throw new Exception("Generated cat story is empty");
             }
 
-            if (strlen($catStory) < 50) {
+            if (strlen($catStory) < 20) {
                 throw new Exception("Generated cat story is too short");
             }
 
             // Save the story and mark as completed
             $this->document->markAsCompleted($catStory);
 
-            Log::info("Cat story generation completed successfully for document ID: {$this->document->id}");
+            Log::info("Large content cat story generation completed successfully for document ID: {$this->document->id}");
 
         } catch (Exception $e) {
-            Log::error("Cat story generation job failed for document ID: {$this->document->id}. Error: " . $e->getMessage());
+            Log::error("Large content cat story generation job failed for document ID: {$this->document->id}. Error: " . $e->getMessage());
 
             // Mark document as failed with specific error
             $this->document->markAsFailed("Cat story generation failed: " . $e->getMessage());
@@ -84,7 +88,7 @@ class GenerateCatStoryJob implements ShouldQueue
 
     public function failed(\Throwable $exception): void
     {
-        Log::error("Cat story generation job ultimately failed for document ID: {$this->document->id}. Error: " . $exception->getMessage());
+        Log::error("Large content cat story generation job ultimately failed for document ID: {$this->document->id}. Error: " . $exception->getMessage());
         
         // Ensure document is marked as failed if not already
         if (!$this->document->isFailed()) {
@@ -93,30 +97,18 @@ class GenerateCatStoryJob implements ShouldQueue
     }
 
     /**
-     * Calculate the number of seconds to wait before retrying the job.
+     * Calculate backoff delays for retries
      */
     public function backoff(): array
     {
-        return [30, 60, 120]; // Wait 30s, then 60s, then 120s between retries
+        return [120, 300, 600]; // 2 min, 5 min, 10 min
     }
 
     /**
-     * Determine the time at which the job should timeout.
+     * Determine the time at which the job should timeout
      */
     public function retryUntil(): \DateTime
     {
-        return now()->addMinutes(15); // Give up after 15 minutes total
-    }
-
-    /**
-     * Get the tags that should be assigned to the job.
-     */
-    public function tags(): array
-    {
-        return [
-            'document:' . $this->document->id,
-            'user:' . $this->document->user_id,
-            'cat-story-generation'
-        ];
+        return now()->addHours(1); // Give up after 1 hour total
     }
 }

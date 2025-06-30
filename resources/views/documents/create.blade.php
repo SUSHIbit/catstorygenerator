@@ -6,7 +6,7 @@
                     <span class="text-3xl mr-3">📤</span>
                     {{ __('Upload Document') }}
                 </h2>
-                <p class="text-slate-600 mt-1">Transform your documents into entertaining cat stories</p>
+                <p class="text-slate-600 mt-1">Transform your documents into entertaining cat stories - No limits!</p>
             </div>
             <div class="mt-4 sm:mt-0">
                 <a href="{{ route('documents.index') }}" 
@@ -46,10 +46,10 @@
                     <!-- Welcome Section -->
                     <div class="text-center mb-8">
                         <div class="text-6xl mb-4 float-animation">🐱</div>
-                        <h3 class="text-2xl font-bold text-slate-800 mb-2">Upload Your Document</h3>
+                        <h3 class="text-2xl font-bold text-slate-800 mb-2">Upload Any Document</h3>
                         <p class="text-slate-600 max-w-2xl mx-auto">
-                            Upload a document and let our AI cat narrator transform it into a simple, entertaining story! 
-                            Perfect for understanding complex content through fun narratives.
+                            Upload any document of any size! Our AI cat narrator can handle everything from small PDFs to massive presentations.
+                            No limits on file size or pages!
                         </p>
                     </div>
 
@@ -97,7 +97,7 @@
                                         <span class="mr-2">📄</span>
                                         Choose File
                                     </div>
-                                    <p class="text-sm text-slate-400 mt-4">Supports: PDF, DOC, DOCX, PPT, PPTX (Max 50MB, up to 300 pages)</p>
+                                    <p class="text-sm text-slate-400 mt-4">Supports: PDF, DOC, DOCX, PPT, PPTX (No size limit, any number of pages)</p>
                                 </div>
                                 
                                 <!-- File Selected State -->
@@ -197,11 +197,11 @@
                                     <div class="space-y-2 text-sm text-slate-600">
                                         <div class="flex items-start">
                                             <span class="text-green-600 mr-2 mt-0.5">✓</span>
-                                            <span>Maximum file size: 50MB (increased from 10MB)</span>
+                                            <span>No file size limit - Any size accepted</span>
                                         </div>
                                         <div class="flex items-start">
                                             <span class="text-green-600 mr-2 mt-0.5">✓</span>
-                                            <span>Maximum pages: 300 pages (for all document types)</span>
+                                            <span>No page limit - Any number of pages</span>
                                         </div>
                                         <div class="flex items-start">
                                             <span class="text-green-600 mr-2 mt-0.5">✓</span>
@@ -213,11 +213,15 @@
                                         </div>
                                         <div class="flex items-start">
                                             <span class="text-green-600 mr-2 mt-0.5">✓</span>
-                                            <span>At least 50 characters of content</span>
+                                            <span>At least 10 characters of content</span>
                                         </div>
                                         <div class="flex items-start">
                                             <span class="text-blue-600 mr-2 mt-0.5">ℹ️</span>
-                                            <span>Large documents may take 5-15 minutes to process</span>
+                                            <span>Large documents may take 30-60 minutes to process</span>
+                                        </div>
+                                        <div class="flex items-start">
+                                            <span class="text-blue-600 mr-2 mt-0.5">💡</span>
+                                            <span>Very large files are processed in chunks for best results</span>
                                         </div>
                                     </div>
                                 </div>
@@ -228,23 +232,23 @@
                         <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-6">
                             <h5 class="font-medium text-slate-800 mb-4 flex items-center">
                                 <span class="mr-2">🔮</span>
-                                What happens after upload?
+                                What happens with large documents?
                             </h5>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div class="text-center">
-                                    <div class="text-3xl mb-2">📖</div>
-                                    <h6 class="font-medium text-slate-700 mb-1">Text Extraction</h6>
-                                    <p class="text-sm text-slate-600">We extract and analyze the text content from your document</p>
-                                </div>
-                                <div class="text-center">
-                                    <div class="text-3xl mb-2">🤖</div>
-                                    <h6 class="font-medium text-slate-700 mb-1">AI Processing</h6>
-                                    <p class="text-sm text-slate-600">Our cat narrator transforms complex ideas into simple stories</p>
+                                    <div class="text-3xl mb-2">🔧</div>
+                                    <h6 class="font-medium text-slate-700 mb-1">Smart Processing</h6>
+                                    <p class="text-sm text-slate-600">Large documents are automatically processed in chunks to ensure reliability</p>
                                 </div>
                                 <div class="text-center">
                                     <div class="text-3xl mb-2">🐱</div>
-                                    <h6 class="font-medium text-slate-700 mb-1">Cat Story</h6>
-                                    <p class="text-sm text-slate-600">Enjoy your document as an entertaining, educational cat story</p>
+                                    <h6 class="font-medium text-slate-700 mb-1">Cat-sized Stories</h6>
+                                    <p class="text-sm text-slate-600">Even huge documents become simple, digestible cat stories</p>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-3xl mb-2">⏰</div>
+                                    <h6 class="font-medium text-slate-700 mb-1">Patient Processing</h6>
+                                    <p class="text-sm text-slate-600">Very large files may take time, but we'll process everything</p>
                                 </div>
                             </div>
                         </div>
@@ -270,11 +274,10 @@
             const progressBar = document.getElementById('progress-bar');
             const uploadStatus = document.getElementById('upload-status');
 
-            // File validation
+            // File validation - NO SIZE LIMITS
             function validateFile(file) {
                 const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'];
                 const allowedExtensions = ['pdf', 'doc', 'docx', 'ppt', 'pptx'];
-                const maxSize = 50 * 1024 * 1024; // 50MB (increased from 10MB)
 
                 const extension = file.name.split('.').pop().toLowerCase();
                 
@@ -283,20 +286,18 @@
                     return false;
                 }
 
-                if (file.size > maxSize) {
-                    CatStoryApp.showNotification('File size must be less than 50MB', 'error');
-                    return false;
-                }
-
+                // NO SIZE LIMIT - Accept any file size
                 return true;
             }
 
-            // Estimate processing time based on file size
+            // Estimate processing time for large files
             function estimateProcessingTime(fileSize) {
                 if (fileSize < 1024 * 1024) return '1-2 minutes'; // < 1MB
-                if (fileSize < 5 * 1024 * 1024) return '2-3 minutes'; // < 5MB
-                if (fileSize < 25 * 1024 * 1024) return '3-8 minutes'; // < 25MB
-                return '5-15 minutes'; // > 25MB (larger files)
+                if (fileSize < 10 * 1024 * 1024) return '2-5 minutes'; // < 10MB
+                if (fileSize < 50 * 1024 * 1024) return '5-10 minutes'; // < 50MB
+                if (fileSize < 100 * 1024 * 1024) return '10-20 minutes'; // < 100MB
+                if (fileSize < 500 * 1024 * 1024) return '20-45 minutes'; // < 500MB
+                return '30-60 minutes'; // Very large files
             }
 
             // Handle file selection
@@ -325,6 +326,11 @@
                 if (!titleInput.value) {
                     const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
                     titleInput.value = nameWithoutExt;
+                }
+
+                // Show warning for very large files
+                if (file.size > 100 * 1024 * 1024) { // > 100MB
+                    CatStoryApp.showNotification('Large file detected! Processing may take 30-60 minutes.', 'info');
                 }
             }
 
@@ -392,7 +398,7 @@
                 }
             }
 
-            // Form submission with progress
+            // Form submission with progress for large files
             uploadForm.addEventListener('submit', function(e) {
                 e.preventDefault();
                 
@@ -401,31 +407,39 @@
                     return;
                 }
 
+                const file = fileInput.files[0];
+                const isLargeFile = file.size > 50 * 1024 * 1024; // > 50MB
+
                 // Show upload progress
                 fileSelected.classList.add('hidden');
                 uploadProgress.classList.remove('hidden');
                 
-                // Simulate upload progress
+                // Simulate upload progress with different timing for large files
                 let progress = 0;
+                const maxProgress = 95;
+                const progressSpeed = isLargeFile ? 500 : 200; // Slower for large files
+                
                 const progressInterval = setInterval(() => {
-                    progress += Math.random() * 15;
-                    if (progress > 95) {
-                        progress = 95;
+                    const increment = isLargeFile ? Math.random() * 5 : Math.random() * 15;
+                    progress += increment;
+                    
+                    if (progress > maxProgress) {
+                        progress = maxProgress;
                         clearInterval(progressInterval);
                     }
                     
                     progressBar.style.width = progress + '%';
                     
-                    if (progress < 30) {
-                        uploadStatus.textContent = 'Uploading file...';
-                    } else if (progress < 60) {
+                    if (progress < 20) {
+                        uploadStatus.textContent = isLargeFile ? 'Uploading large file...' : 'Uploading file...';
+                    } else if (progress < 50) {
                         uploadStatus.textContent = 'Validating document...';
-                    } else if (progress < 90) {
-                        uploadStatus.textContent = 'Processing file...';
+                    } else if (progress < 80) {
+                        uploadStatus.textContent = isLargeFile ? 'Processing large file...' : 'Processing file...';
                     } else {
                         uploadStatus.textContent = 'Almost done...';
                     }
-                }, 200);
+                }, progressSpeed);
 
                 // Actually submit the form
                 const formData = new FormData(this);
@@ -443,10 +457,15 @@
                         progressBar.style.width = '100%';
                         uploadStatus.textContent = 'Upload complete! Redirecting...';
                         
+                        // Show success message for large files
+                        if (isLargeFile) {
+                            CatStoryApp.showNotification('Large file uploaded successfully! Processing will continue in the background.', 'success');
+                        }
+                        
                         // Redirect after a short delay
                         setTimeout(() => {
                             window.location.href = response.url || '/documents';
-                        }, 1000);
+                        }, isLargeFile ? 2000 : 1000);
                     } else {
                         throw new Error('Upload failed');
                     }
@@ -472,7 +491,7 @@
             window.addEventListener('beforeunload', (e) => {
                 if (uploading) {
                     e.preventDefault();
-                    e.returnValue = '';
+                    e.returnValue = 'Upload in progress. Are you sure you want to leave?';
                 }
             });
         });

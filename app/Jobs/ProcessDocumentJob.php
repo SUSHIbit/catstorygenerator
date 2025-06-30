@@ -17,7 +17,8 @@ class ProcessDocumentJob implements ShouldQueue
 
     public Document $document;
     public int $tries = 3;
-    public int $timeout = 300; // 5 minutes
+    public int $timeout = 3600; // 1 hour for very large files
+    public int $maxExceptions = 3;
 
     public function __construct(Document $document)
     {
@@ -27,21 +28,24 @@ class ProcessDocumentJob implements ShouldQueue
 
     public function handle(DocumentParserService $parserService): void
     {
-        Log::info("Processing document job started for document ID: {$this->document->id}");
+        Log::info("Processing large document job started for document ID: {$this->document->id}");
         
         try {
+            // Set memory and time limits for large files
+            ini_set('memory_limit', '2048M');
+            set_time_limit(3600); // 1 hour
+            
             // Parse the document
             $success = $parserService->parseDocument($this->document);
             
             if ($success) {
-                Log::info("Document processing completed successfully for document ID: {$this->document->id}");
-                // Cat story generation job is automatically dispatched by DocumentParserService
+                Log::info("Large document processing completed successfully for document ID: {$this->document->id}");
             } else {
-                Log::error("Document processing failed for document ID: {$this->document->id}");
+                Log::error("Large document processing failed for document ID: {$this->document->id}");
             }
             
         } catch (\Exception $e) {
-            Log::error("Document processing job failed for document ID: {$this->document->id}. Error: " . $e->getMessage());
+            Log::error("Large document processing job failed for document ID: {$this->document->id}. Error: " . $e->getMessage());
             
             $this->document->markAsFailed("Processing failed: " . $e->getMessage());
             throw $e;
@@ -50,8 +54,24 @@ class ProcessDocumentJob implements ShouldQueue
 
     public function failed(\Throwable $exception): void
     {
-        Log::error("Document processing job ultimately failed for document ID: {$this->document->id}. Error: " . $exception->getMessage());
+        Log::error("Large document processing job ultimately failed for document ID: {$this->document->id}. Error: " . $exception->getMessage());
         
         $this->document->markAsFailed("Processing failed after multiple attempts: " . $exception->getMessage());
+    }
+
+    /**
+     * Calculate backoff delays for retries
+     */
+    public function backoff(): array
+    {
+        return [60, 300, 900]; // 1 min, 5 min, 15 min
+    }
+
+    /**
+     * Determine the time at which the job should timeout
+     */
+    public function retryUntil(): \DateTime
+    {
+        return now()->addHours(2); // Give up after 2 hours total
     }
 }

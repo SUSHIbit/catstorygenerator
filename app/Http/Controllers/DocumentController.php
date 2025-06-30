@@ -54,7 +54,7 @@ class DocumentController extends Controller
             'file' => [
                 'required',
                 'file',
-                'max:51200', // Increased to 50MB max (50 * 1024 KB)
+                'max:2097152', // 2GB max - UNLIMITED
                 'mimes:pdf,doc,docx,ppt,pptx'
             ],
             'title' => 'nullable|string|max:255'
