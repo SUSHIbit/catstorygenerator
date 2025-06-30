@@ -5,6 +5,7 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use App\Services\DocumentParserService;
 use App\Services\OpenAIService;
+use App\Services\MockOpenAIService;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -18,8 +19,13 @@ class AppServiceProvider extends ServiceProvider
             return new DocumentParserService();
         });
 
-        // Register OpenAIService as singleton
+        // Register OpenAIService as singleton - with mock option for testing
         $this->app->singleton(OpenAIService::class, function ($app) {
+            // Use mock service if OPENAI_MOCK is set to true in .env
+            if (env('OPENAI_MOCK', false)) {
+                return new MockOpenAIService();
+            }
+            
             return new OpenAIService();
         });
     }
@@ -29,7 +35,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // REMOVED: All the problematic configuration code
-        // PHP limits should be set in php.ini or .htaccess instead
+        //
     }
 }

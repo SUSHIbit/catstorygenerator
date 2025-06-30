@@ -17,35 +17,47 @@ class ProcessDocumentJob implements ShouldQueue
 
     public Document $document;
     public int $tries = 3;
-    public int $timeout = 3600; // 1 hour for very large files
+    public int $timeout = 1800; // 30 minutes
     public int $maxExceptions = 3;
 
     public function __construct(Document $document)
     {
         $this->document = $document;
-        $this->onQueue('document-processing');
+        // Remove queue specification to use default
     }
 
     public function handle(DocumentParserService $parserService): void
     {
-        Log::info("Processing large document job started for document ID: {$this->document->id}");
+        Log::info("Starting document processing for document ID: {$this->document->id}");
         
         try {
-            // Set memory and time limits for large files
-            ini_set('memory_limit', '2048M');
-            set_time_limit(3600); // 1 hour
+            // Set high limits for large files
+            ini_set('memory_limit', '1024M');
+            set_time_limit(1800); // 30 minutes
+            
+            // Refresh document to get latest data
+            $this->document->refresh();
+            
+            // Check if document file exists
+            if (!file_exists(storage_path('app/public/' . $this->document->filepath))) {
+                throw new \Exception("Document file not found: {$this->document->filepath}");
+            }
+            
+            Log::info("Processing document: {$this->document->title} (Type: {$this->document->file_type}, Size: {$this->document->file_size_formatted})");
             
             // Parse the document
             $success = $parserService->parseDocument($this->document);
             
             if ($success) {
-                Log::info("Large document processing completed successfully for document ID: {$this->document->id}");
+                Log::info("Document processing completed successfully for document ID: {$this->document->id}");
             } else {
-                Log::error("Large document processing failed for document ID: {$this->document->id}");
+                Log::error("Document processing failed for document ID: {$this->document->id}");
+                throw new \Exception("Document parsing failed");
             }
             
         } catch (\Exception $e) {
-            Log::error("Large document processing job failed for document ID: {$this->document->id}. Error: " . $e->getMessage());
+            Log::error("Document processing job failed for document ID: {$this->document->id}. Error: " . $e->getMessage());
+            Log::error("Stack trace: " . $e->getTraceAsString());
             
             $this->document->markAsFailed("Processing failed: " . $e->getMessage());
             throw $e;
@@ -54,9 +66,12 @@ class ProcessDocumentJob implements ShouldQueue
 
     public function failed(\Throwable $exception): void
     {
-        Log::error("Large document processing job ultimately failed for document ID: {$this->document->id}. Error: " . $exception->getMessage());
+        Log::error("Document processing job ultimately failed for document ID: {$this->document->id}. Error: " . $exception->getMessage());
         
-        $this->document->markAsFailed("Processing failed after multiple attempts: " . $exception->getMessage());
+        // Ensure document is marked as failed if not already
+        if (!$this->document->isFailed()) {
+            $this->document->markAsFailed("Processing failed after multiple attempts: " . $exception->getMessage());
+        }
     }
 
     /**
@@ -64,7 +79,7 @@ class ProcessDocumentJob implements ShouldQueue
      */
     public function backoff(): array
     {
-        return [60, 300, 900]; // 1 min, 5 min, 15 min
+        return [60, 180, 300]; // 1 min, 3 min, 5 min
     }
 
     /**
@@ -72,6 +87,6 @@ class ProcessDocumentJob implements ShouldQueue
      */
     public function retryUntil(): \DateTime
     {
-        return now()->addHours(2); // Give up after 2 hours total
+        return now()->addHours(1); // Give up after 1 hour total
     }
 }

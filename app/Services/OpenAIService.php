@@ -19,8 +19,9 @@ class OpenAIService
         $this->maxTokens = 2000;
         $this->model = 'gpt-3.5-turbo';
         
+        // Don't throw exception in constructor, just log warning
         if (empty($this->apiKey)) {
-            throw new Exception('OpenAI API key not configured');
+            Log::warning('OpenAI API key not configured. Cat story generation will fail.');
         }
     }
 
@@ -31,6 +32,11 @@ class OpenAIService
     {
         try {
             Log::info("Starting cat story generation for document ID: {$document->id}");
+
+            // Check API key
+            if (empty($this->apiKey)) {
+                throw new Exception("OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file.");
+            }
 
             if (empty($document->original_content)) {
                 throw new Exception("No content available to transform into cat story");
@@ -43,7 +49,7 @@ class OpenAIService
             Log::info("Processing {$contentLength} characters for cat story generation");
             
             // If content is very large, use summary approach
-            if ($contentLength > 100000) { // 100KB
+            if ($contentLength > 50000) { // 50KB
                 Log::info("Large content detected, using chunked processing");
                 return $this->generateCatStoryForLargeContent($content);
             } else {
@@ -68,11 +74,13 @@ class OpenAIService
         
         while ($retryCount < $maxRetries) {
             try {
+                Log::info("Attempting OpenAI API call (attempt " . ($retryCount + 1) . ")");
+                
                 $response = Http::withHeaders([
                     'Authorization' => 'Bearer ' . $this->apiKey,
                     'Content-Type' => 'application/json',
                 ])
-                ->timeout(60)
+                ->timeout(120) // Increased timeout
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => $this->model,
                     'messages' => [
@@ -92,17 +100,27 @@ class OpenAIService
                     'presence_penalty' => 0.1
                 ]);
 
+                Log::info("OpenAI API response status: " . $response->status());
+
                 if ($response->successful()) {
                     $data = $response->json();
+                    
+                    if (!isset($data['choices'][0]['message']['content'])) {
+                        throw new Exception("Invalid response structure from OpenAI: " . json_encode($data));
+                    }
+                    
                     $catStory = $data['choices'][0]['message']['content'] ?? '';
                     
                     if (empty($catStory)) {
                         throw new Exception("OpenAI returned empty response");
                     }
 
+                    Log::info("Successfully generated cat story (" . strlen($catStory) . " characters)");
                     return trim($catStory);
                 } else {
-                    throw new Exception("OpenAI API error: " . $response->body());
+                    $errorBody = $response->body();
+                    Log::error("OpenAI API error response: " . $errorBody);
+                    throw new Exception("OpenAI API error (HTTP {$response->status()}): " . $errorBody);
                 }
                 
             } catch (Exception $e) {
@@ -110,12 +128,15 @@ class OpenAIService
                 Log::warning("OpenAI API attempt {$retryCount} failed: " . $e->getMessage());
                 
                 if ($retryCount >= $maxRetries) {
-                    throw $e;
+                    throw new Exception("OpenAI API failed after {$maxRetries} attempts. Last error: " . $e->getMessage());
                 }
                 
-                sleep(2);
+                // Wait before retrying
+                sleep(pow(2, $retryCount)); // Exponential backoff: 2s, 4s, 8s
             }
         }
+        
+        throw new Exception("OpenAI API failed after all retries");
     }
 
     /**
@@ -125,25 +146,27 @@ class OpenAIService
     {
         try {
             // Split content into manageable chunks
-            $chunkSize = 15000; // 15KB chunks
+            $chunkSize = 10000; // 10KB chunks - smaller for reliability
             $chunks = str_split($content, $chunkSize);
             $chunkCount = count($chunks);
             
             Log::info("Processing large content in {$chunkCount} chunks");
             
-            // Generate story for first few chunks and create a summary
-            $maxChunks = min(5, $chunkCount); // Process max 5 chunks
+            // Generate story for first few chunks
+            $maxChunks = min(3, $chunkCount); // Process max 3 chunks
             $chunkStories = [];
             
             for ($i = 0; $i < $maxChunks; $i++) {
                 try {
+                    Log::info("Processing chunk " . ($i + 1) . " of {$maxChunks}");
+                    
                     $chunkPrompt = $this->buildCatStoryPromptForChunk($chunks[$i], $i + 1, $chunkCount);
                     
                     $response = Http::withHeaders([
                         'Authorization' => 'Bearer ' . $this->apiKey,
                         'Content-Type' => 'application/json',
                     ])
-                    ->timeout(60)
+                    ->timeout(120)
                     ->post('https://api.openai.com/v1/chat/completions', [
                         'model' => $this->model,
                         'messages' => [
@@ -156,7 +179,7 @@ class OpenAIService
                                 'content' => $chunkPrompt
                             ]
                         ],
-                        'max_tokens' => 1000, // Smaller for chunks
+                        'max_tokens' => 800, // Smaller for chunks
                         'temperature' => 0.8,
                         'top_p' => 0.9,
                         'frequency_penalty' => 0.2,
@@ -169,14 +192,19 @@ class OpenAIService
                         if (!empty($chunkStory)) {
                             $chunkStories[] = trim($chunkStory);
                         }
+                    } else {
+                        Log::warning("Failed to process chunk " . ($i + 1) . ": HTTP " . $response->status());
+                        $chunkStories[] = "Kitty couldn't read this part properly, but kitty tried!";
                     }
                     
                     // Small delay between API calls
-                    sleep(1);
+                    if ($i < $maxChunks - 1) {
+                        sleep(1);
+                    }
                     
                 } catch (Exception $e) {
                     Log::warning("Failed to process chunk " . ($i + 1) . ": " . $e->getMessage());
-                    $chunkStories[] = "Kitty couldn't read this part properly, but kitty tried!";
+                    $chunkStories[] = "Kitty had trouble with this part, but kitty kept trying!";
                 }
             }
             
@@ -195,7 +223,7 @@ class OpenAIService
             Log::error("Large content processing failed: " . $e->getMessage());
             
             // Fallback: Use just the beginning of the content
-            $shortContent = substr($content, 0, 20000); // First 20KB
+            $shortContent = substr($content, 0, 15000); // First 15KB
             return $this->generateCatStoryForNormalContent($shortContent) . 
                    "\n\n[Kitty note: This document was very long! Kitty summarized the beginning for you.]";
         }
@@ -207,6 +235,11 @@ class OpenAIService
     public function isAvailable(): bool
     {
         try {
+            if (empty($this->apiKey)) {
+                Log::warning("OpenAI API key not configured");
+                return false;
+            }
+
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
                 'Content-Type' => 'application/json',
@@ -217,13 +250,16 @@ class OpenAIService
                 'messages' => [
                     [
                         'role' => 'user',
-                        'content' => 'Hello'
+                        'content' => 'Test'
                     ]
                 ],
                 'max_tokens' => 5
             ]);
 
-            return $response->successful();
+            $isAvailable = $response->successful();
+            Log::info("OpenAI service availability check: " . ($isAvailable ? 'Available' : 'Unavailable'));
+            
+            return $isAvailable;
 
         } catch (Exception $e) {
             Log::warning("OpenAI service availability check failed: " . $e->getMessage());
@@ -238,7 +274,7 @@ class OpenAIService
 
     private function buildCatStoryPrompt(string $content): string
     {
-        $maxContentLength = 20000; // 20KB
+        $maxContentLength = 15000; // 15KB - reduced for better reliability
         if (strlen($content) > $maxContentLength) {
             $content = substr($content, 0, $maxContentLength) . "...";
         }
@@ -257,7 +293,7 @@ class OpenAIService
         $baseTime = max(30, min(600, ceil($wordCount / 50))); // 30 seconds to 10 minutes
         
         // Add extra time for very large content
-        if (strlen($content) > 100000) {
+        if (strlen($content) > 50000) {
             $baseTime += 300; // Add 5 minutes for large content
         }
         
@@ -274,6 +310,10 @@ class OpenAIService
         
         if (strlen($content) < 10) { // Reduced minimum
             $issues[] = "Content is too short (minimum 10 characters)";
+        }
+        
+        if (strlen($content) > 200000) { // 200KB limit
+            $issues[] = "Content is very large and may take longer to process";
         }
         
         return [

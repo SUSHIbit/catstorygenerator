@@ -18,23 +18,23 @@ class GenerateCatStoryJob implements ShouldQueue
 
     public Document $document;
     public int $tries = 3;
-    public int $timeout = 1800; // 30 minutes for large content
+    public int $timeout = 900; // 15 minutes
     public int $maxExceptions = 3;
 
     public function __construct(Document $document)
     {
         $this->document = $document;
-        $this->onQueue('cat-story-generation');
+        // Remove queue specification to use default
     }
 
     public function handle(OpenAIService $openAIService): void
     {
-        Log::info("Starting large content cat story generation job for document ID: {$this->document->id}");
+        Log::info("Starting cat story generation for document ID: {$this->document->id}");
 
         try {
-            // Set memory and time limits for large content
-            ini_set('memory_limit', '1024M');
-            set_time_limit(1800); // 30 minutes
+            // Set memory and time limits
+            ini_set('memory_limit', '512M');
+            set_time_limit(900); // 15 minutes
             
             // Refresh document to get latest data
             $this->document->refresh();
@@ -50,16 +50,18 @@ class GenerateCatStoryJob implements ShouldQueue
                 return;
             }
 
+            Log::info("Generating cat story for document: {$this->document->title} (Content length: " . strlen($this->document->original_content) . " characters)");
+
+            // Mark document as processing (for AI story generation)
+            $this->document->update(['status' => 'processing']);
+
             // Validate content before processing
             $validation = $openAIService->validateContent($this->document->original_content);
             if (!$validation['valid']) {
                 throw new Exception("Content validation failed: " . implode(', ', $validation['issues']));
             }
 
-            // Mark document as processing (for AI story generation)
-            $this->document->update(['status' => 'processing']);
-
-            // Generate the cat story (handles large content automatically)
+            // Generate the cat story
             $catStory = $openAIService->generateCatStory($this->document);
 
             // Validate the generated story
@@ -68,16 +70,17 @@ class GenerateCatStoryJob implements ShouldQueue
             }
 
             if (strlen($catStory) < 20) {
-                throw new Exception("Generated cat story is too short");
+                throw new Exception("Generated cat story is too short (less than 20 characters)");
             }
 
             // Save the story and mark as completed
             $this->document->markAsCompleted($catStory);
 
-            Log::info("Large content cat story generation completed successfully for document ID: {$this->document->id}");
+            Log::info("Cat story generation completed successfully for document ID: {$this->document->id}");
 
         } catch (Exception $e) {
-            Log::error("Large content cat story generation job failed for document ID: {$this->document->id}. Error: " . $e->getMessage());
+            Log::error("Cat story generation job failed for document ID: {$this->document->id}. Error: " . $e->getMessage());
+            Log::error("Stack trace: " . $e->getTraceAsString());
 
             // Mark document as failed with specific error
             $this->document->markAsFailed("Cat story generation failed: " . $e->getMessage());
@@ -88,7 +91,7 @@ class GenerateCatStoryJob implements ShouldQueue
 
     public function failed(\Throwable $exception): void
     {
-        Log::error("Large content cat story generation job ultimately failed for document ID: {$this->document->id}. Error: " . $exception->getMessage());
+        Log::error("Cat story generation job ultimately failed for document ID: {$this->document->id}. Error: " . $exception->getMessage());
         
         // Ensure document is marked as failed if not already
         if (!$this->document->isFailed()) {
@@ -101,7 +104,7 @@ class GenerateCatStoryJob implements ShouldQueue
      */
     public function backoff(): array
     {
-        return [120, 300, 600]; // 2 min, 5 min, 10 min
+        return [60, 120, 180]; // 1 min, 2 min, 3 min
     }
 
     /**
@@ -109,6 +112,6 @@ class GenerateCatStoryJob implements ShouldQueue
      */
     public function retryUntil(): \DateTime
     {
-        return now()->addHours(1); // Give up after 1 hour total
+        return now()->addMinutes(30); // Give up after 30 minutes total
     }
 }
