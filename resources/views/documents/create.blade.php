@@ -97,7 +97,7 @@
                                         <span class="mr-2">📄</span>
                                         Choose File
                                     </div>
-                                    <p class="text-sm text-slate-400 mt-4">Supports: PDF, DOC, DOCX, PPT, PPTX (Max 10MB)</p>
+                                    <p class="text-sm text-slate-400 mt-4">Supports: PDF, DOC, DOCX, PPT, PPTX (Max 50MB, up to 300 pages)</p>
                                 </div>
                                 
                                 <!-- File Selected State -->
@@ -197,7 +197,11 @@
                                     <div class="space-y-2 text-sm text-slate-600">
                                         <div class="flex items-start">
                                             <span class="text-green-600 mr-2 mt-0.5">✓</span>
-                                            <span>Maximum file size: 10MB</span>
+                                            <span>Maximum file size: 50MB (increased from 10MB)</span>
+                                        </div>
+                                        <div class="flex items-start">
+                                            <span class="text-green-600 mr-2 mt-0.5">✓</span>
+                                            <span>Maximum pages: 300 pages (for all document types)</span>
                                         </div>
                                         <div class="flex items-start">
                                             <span class="text-green-600 mr-2 mt-0.5">✓</span>
@@ -210,6 +214,10 @@
                                         <div class="flex items-start">
                                             <span class="text-green-600 mr-2 mt-0.5">✓</span>
                                             <span>At least 50 characters of content</span>
+                                        </div>
+                                        <div class="flex items-start">
+                                            <span class="text-blue-600 mr-2 mt-0.5">ℹ️</span>
+                                            <span>Large documents may take 5-15 minutes to process</span>
                                         </div>
                                     </div>
                                 </div>
@@ -266,7 +274,7 @@
             function validateFile(file) {
                 const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'];
                 const allowedExtensions = ['pdf', 'doc', 'docx', 'ppt', 'pptx'];
-                const maxSize = 10 * 1024 * 1024; // 10MB
+                const maxSize = 50 * 1024 * 1024; // 50MB (increased from 10MB)
 
                 const extension = file.name.split('.').pop().toLowerCase();
                 
@@ -276,7 +284,7 @@
                 }
 
                 if (file.size > maxSize) {
-                    CatStoryApp.showNotification('File size must be less than 10MB', 'error');
+                    CatStoryApp.showNotification('File size must be less than 50MB', 'error');
                     return false;
                 }
 
@@ -287,7 +295,8 @@
             function estimateProcessingTime(fileSize) {
                 if (fileSize < 1024 * 1024) return '1-2 minutes'; // < 1MB
                 if (fileSize < 5 * 1024 * 1024) return '2-3 minutes'; // < 5MB
-                return '3-5 minutes'; // > 5MB
+                if (fileSize < 25 * 1024 * 1024) return '3-8 minutes'; // < 25MB
+                return '5-15 minutes'; // > 25MB (larger files)
             }
 
             // Handle file selection

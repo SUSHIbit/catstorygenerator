@@ -35,14 +35,14 @@ class DocumentParserService
         try {
             Log::info("Starting document parsing for document ID: {$document->id}");
             
-            // Check file size first
-            if ($document->file_size > 10 * 1024 * 1024) { // 10MB
-                throw new Exception("File too large for processing (max 10MB)");
+            // Check file size first - increased to 50MB for larger documents
+            if ($document->file_size > 50 * 1024 * 1024) { // 50MB
+                throw new Exception("File too large for processing (max 50MB)");
             }
             
             // Increase memory limit for this operation
             $originalMemoryLimit = ini_get('memory_limit');
-            ini_set('memory_limit', '512M');
+            ini_set('memory_limit', '1024M'); // Increased to 1GB
             
             // Mark document as processing
             $document->markAsProcessing();
@@ -102,15 +102,15 @@ class DocumentParserService
     }
 
     /**
-     * Memory-safe PDF extraction
+     * Memory-safe PDF extraction - INCREASED PAGE LIMIT TO 300
      */
     private function extractFromPdfSafe(string $filePath): string
     {
         try {
-            // Check file size before processing
+            // Check file size before processing - increased to 25MB for PDFs
             $fileSize = filesize($filePath);
-            if ($fileSize > 5 * 1024 * 1024) { // 5MB limit for PDFs
-                throw new Exception("PDF file too large for text extraction");
+            if ($fileSize > 25 * 1024 * 1024) { // 25MB limit for PDFs
+                throw new Exception("PDF file too large for text extraction (max 25MB)");
             }
             
             $pdf = $this->pdfParser->parseFile($filePath);
@@ -120,21 +120,36 @@ class DocumentParserService
             $pages = $pdf->getPages();
             $pageCount = count($pages);
             
-            if ($pageCount > 50) {
-                throw new Exception("PDF has too many pages (max 50 pages)");
+            // INCREASED PAGE LIMIT TO 300 - THIS IS THE KEY CHANGE
+            if ($pageCount > 300) {
+                throw new Exception("PDF has too many pages (max 300 pages)");
             }
             
+            Log::info("Processing PDF with {$pageCount} pages for extraction");
+            
             foreach ($pages as $pageNumber => $page) {
-                $pageText = $page->getText();
-                $text .= $pageText . "\n";
-                
-                // Free memory after each page
-                unset($pageText);
-                
-                // Stop if we have enough content
-                if (strlen($text) > 50000) {
-                    $text .= "\n[Content truncated - document too long]";
-                    break;
+                try {
+                    $pageText = $page->getText();
+                    $text .= $pageText . "\n";
+                    
+                    // Free memory after each page
+                    unset($pageText);
+                    
+                    // Log progress every 50 pages for large documents
+                    if (($pageNumber + 1) % 50 === 0) {
+                        Log::info("Processed " . ($pageNumber + 1) . " pages out of {$pageCount}");
+                        gc_collect_cycles(); // Force garbage collection
+                    }
+                    
+                    // Increased content limit to 200KB before truncation
+                    if (strlen($text) > 200000) {
+                        $text .= "\n[Content truncated - document too long]";
+                        Log::info("Content truncated at 200KB to manage memory");
+                        break;
+                    }
+                } catch (Exception $pageError) {
+                    Log::warning("Failed to extract text from page " . ($pageNumber + 1) . ": " . $pageError->getMessage());
+                    continue; // Skip problematic pages
                 }
             }
             
@@ -142,6 +157,7 @@ class DocumentParserService
                 throw new Exception("PDF appears to be empty or contains only images");
             }
             
+            Log::info("Successfully extracted " . strlen($text) . " characters from PDF");
             return $text;
             
         } catch (Exception $e) {
@@ -150,20 +166,30 @@ class DocumentParserService
     }
 
     /**
-     * Memory-safe Word document extraction
+     * Memory-safe Word document extraction - INCREASED LIMITS
      */
     private function extractFromWordSafe(string $filePath): string
     {
         try {
             $fileSize = filesize($filePath);
-            if ($fileSize > 5 * 1024 * 1024) { // 5MB limit
-                throw new Exception("Word document too large for text extraction");
+            // Increased to 25MB for Word documents
+            if ($fileSize > 25 * 1024 * 1024) {
+                throw new Exception("Word document too large for text extraction (max 25MB)");
             }
             
             $phpWord = WordIOFactory::load($filePath);
             $text = '';
+            $sectionCount = 0;
             
             foreach ($phpWord->getSections() as $sectionIndex => $section) {
+                $sectionCount++;
+                
+                // Increased section limit to 300
+                if ($sectionCount > 300) {
+                    $text .= "\n[Remaining sections truncated - too many sections]";
+                    break;
+                }
+                
                 foreach ($section->getElements() as $element) {
                     $elementText = $this->extractTextFromWordElement($element);
                     $text .= $elementText . "\n";
@@ -171,11 +197,17 @@ class DocumentParserService
                     // Free memory
                     unset($elementText);
                     
-                    // Stop if we have enough content
-                    if (strlen($text) > 50000) {
+                    // Increased content limit to 200KB
+                    if (strlen($text) > 200000) {
                         $text .= "\n[Content truncated - document too long]";
                         break 2;
                     }
+                }
+                
+                // Log progress every 50 sections
+                if ($sectionCount % 50 === 0) {
+                    Log::info("Processed {$sectionCount} sections");
+                    gc_collect_cycles();
                 }
             }
             
@@ -183,6 +215,7 @@ class DocumentParserService
                 throw new Exception("Word document appears to be empty");
             }
             
+            Log::info("Successfully extracted " . strlen($text) . " characters from Word document");
             return $text;
             
         } catch (Exception $e) {
@@ -191,14 +224,15 @@ class DocumentParserService
     }
 
     /**
-     * Memory-safe PowerPoint extraction
+     * Memory-safe PowerPoint extraction - INCREASED LIMITS
      */
     private function extractFromPowerPointSafe(string $filePath): string
     {
         try {
             $fileSize = filesize($filePath);
-            if ($fileSize > 5 * 1024 * 1024) { // 5MB limit
-                throw new Exception("PowerPoint file too large for text extraction");
+            // Increased to 25MB for PowerPoint files
+            if ($fileSize > 25 * 1024 * 1024) {
+                throw new Exception("PowerPoint file too large for text extraction (max 25MB)");
             }
             
             $presentation = PresentationIOFactory::load($filePath);
@@ -208,7 +242,8 @@ class DocumentParserService
             foreach ($presentation->getAllSlides() as $slideIndex => $slide) {
                 $slideCount++;
                 
-                if ($slideCount > 30) { // Limit slides
+                // INCREASED SLIDE LIMIT TO 300
+                if ($slideCount > 300) {
                     $text .= "\n[Remaining slides truncated - too many slides]";
                     break;
                 }
@@ -216,18 +251,29 @@ class DocumentParserService
                 $text .= "Slide " . ($slideIndex + 1) . ":\n";
                 
                 foreach ($slide->getShapeCollection() as $shape) {
-                    if (method_exists($shape, 'getPlainText')) {
-                        $slideText = $shape->getPlainText();
-                        if (!empty($slideText)) {
-                            $text .= $slideText . "\n";
+                    try {
+                        if (method_exists($shape, 'getPlainText')) {
+                            $slideText = $shape->getPlainText();
+                            if (!empty($slideText)) {
+                                $text .= $slideText . "\n";
+                            }
+                            unset($slideText);
                         }
-                        unset($slideText);
+                    } catch (Exception $shapeError) {
+                        Log::warning("Failed to extract text from shape in slide " . ($slideIndex + 1) . ": " . $shapeError->getMessage());
+                        continue; // Skip problematic shapes
                     }
                 }
                 $text .= "\n";
                 
-                // Stop if we have enough content
-                if (strlen($text) > 50000) {
+                // Log progress every 50 slides
+                if ($slideCount % 50 === 0) {
+                    Log::info("Processed {$slideCount} slides");
+                    gc_collect_cycles();
+                }
+                
+                // Increased content limit to 200KB
+                if (strlen($text) > 200000) {
                     $text .= "\n[Content truncated - document too long]";
                     break;
                 }
@@ -237,6 +283,7 @@ class DocumentParserService
                 throw new Exception("PowerPoint presentation appears to be empty");
             }
             
+            Log::info("Successfully extracted " . strlen($text) . " characters from PowerPoint presentation");
             return $text;
             
         } catch (Exception $e) {
@@ -268,13 +315,13 @@ class DocumentParserService
     }
 
     /**
-     * Clean and normalize extracted text with memory management
+     * Clean and normalize extracted text with memory management - INCREASED LIMITS
      */
     private function cleanExtractedText(string $text): string
     {
-        // Truncate if too long before processing
-        if (strlen($text) > 100000) {
-            $text = substr($text, 0, 100000) . "\n\n[Content truncated due to length...]";
+        // Increased truncation limit to 500KB before processing
+        if (strlen($text) > 500000) {
+            $text = substr($text, 0, 500000) . "\n\n[Content truncated due to length...]";
         }
         
         // Remove excessive whitespace
